@@ -38,6 +38,10 @@
 #include <utility>
 #include <vector>
 
+#include <hpx/concurrency/cache_line_data.hpp>
+#include <hpx/concurrency/detail/non_contiguous_index_queue.hpp>
+#include <optional>
+
 namespace hpx { namespace parallel { namespace execution { namespace detail {
 
     ////////////////////////////////////////////////////////////////////////////
@@ -157,7 +161,7 @@ namespace hpx { namespace parallel { namespace execution { namespace detail {
                 };
 
                 std::size_t begin = 0;
-                auto it = std::begin(shape);
+                auto it_begin = std::begin(shape);
                 for (std::size_t t = 0; t != num_threads; ++t)
                 {
                     auto inner_post_policy =
@@ -168,13 +172,16 @@ namespace hpx { namespace parallel { namespace execution { namespace detail {
                     std::size_t const end = ((t + 1) * size) / num_threads;
                     std::size_t const part_size = end - begin;
 
-                    auto&& launcher = [&, wrapped, begin, end, it](
+                    auto&& launcher = [&, wrapped, begin, end, it_begin](
                                           bool direct) mutable {
-                        // launch N-1 tasks
-                        auto iter = it;
-                        for (std::size_t i = begin + direct; i != end;
-                             (void) ++iter, ++i)
+                        hpx::util::cache_aligned_data<hpx::concurrency::detail::
+                                non_contiguous_index_queue<>>
+                            index_queue;
+                        index_queue.data_.reset(begin, end - direct);
+                        hpx::optional<std::uint32_t> index;
+                        while ((index = index_queue.data_.pop_left()))
                         {
+                            auto iter = std::next(it_begin, index.value());
                             hpx::detail::post_policy_dispatch<Launch>::call(
                                 inner_post_policy, desc, pool, wrapped, *iter,
                                 ts...);
@@ -183,6 +190,7 @@ namespace hpx { namespace parallel { namespace execution { namespace detail {
                         // execute last task directly, if needed
                         if (direct)
                         {
+                            auto iter = std::next(it_begin, end - 1);
                             HPX_INVOKE(wrapped, *iter, ts...);
                         }
                     };
@@ -194,17 +202,15 @@ namespace hpx { namespace parallel { namespace execution { namespace detail {
                     {
                         hpx::detail::post_policy_dispatch<Launch>::call(
                             post_policy, desc, pool, HPX_MOVE(launcher), true);
-                        std::advance(it, part_size);
                     }
                     else if (part_size != 0)
                     {
                         launcher(t == num_threads - 1);
-                        std::advance(it, part_size);
                     }
 
                     begin = end;
                 }
-                HPX_ASSERT(it == hpx::util::end(shape));
+                //HPX_ASSERT(end == size);
 
                 l.wait();
 
