@@ -45,6 +45,37 @@
 namespace hpx { namespace parallel { namespace execution { namespace detail {
 
     ////////////////////////////////////////////////////////////////////////////
+
+    using index_queue_type = hpx::util::cache_aligned_data<
+        hpx::concurrency::detail::non_contiguous_index_queue<>>;
+
+    static void init_queue_depth_first(index_queue_type& queue,
+        std::uint32_t const worker_thread, std::uint32_t const size,
+        std::uint32_t num_threads) noexcept
+    {
+        auto const part_begin =
+            static_cast<std::uint32_t>((worker_thread * size) / num_threads);
+        auto const part_end = static_cast<std::uint32_t>(
+            ((worker_thread + 1) * size) / num_threads);
+        queue.data_.reset(part_begin, part_end);
+    }
+
+    static void init_queue_breadth_first(index_queue_type& queue,
+        std::uint32_t const worker_thread, std::uint32_t const size,
+        std::uint32_t num_threads) noexcept
+    {
+        auto const num_steps = size / num_threads + 1;
+        auto const part_begin = worker_thread;
+        auto part_end = (std::min)(
+            size + num_threads - 1, part_begin + num_steps * num_threads);
+        auto const remainder = (part_end - part_begin) % num_threads;
+        if (remainder != 0)
+        {
+            part_end -= remainder;
+        }
+        queue.data_.reset(part_begin, part_end, num_threads);
+    }
+
     template <typename Launch, typename F, typename S, typename... Ts>
     std::vector<hpx::future<detail::bulk_function_result_t<F, S, Ts...>>>
     hierarchical_bulk_async_execute_helper(
@@ -144,6 +175,7 @@ namespace hpx { namespace parallel { namespace execution { namespace detail {
                 std::exception_ptr e;
                 hpx::spinlock mtx_e;
                 hpx::latch l(size);
+                size_t part_size = size / num_threads;
 
                 auto wrapped = [&, f](auto&&... args) mutable {
                     // properly handle all exceptions thrown from 'f'
@@ -160,8 +192,6 @@ namespace hpx { namespace parallel { namespace execution { namespace detail {
                     l.count_down(1);
                 };
 
-                std::size_t begin = 0;
-                auto it_begin = std::begin(shape);
                 for (std::size_t t = 0; t != num_threads; ++t)
                 {
                     auto inner_post_policy =
@@ -169,28 +199,49 @@ namespace hpx { namespace parallel { namespace execution { namespace detail {
                             threads::thread_schedule_hint{
                                 static_cast<std::int16_t>(first_thread + t)});
 
-                    std::size_t const end = ((t + 1) * size) / num_threads;
-                    std::size_t const part_size = end - begin;
+                    index_queue_type index_queue;
 
-                    auto&& launcher = [&, wrapped, begin, end, it_begin](
+                    // thread placement
+                    hpx::threads::thread_schedule_hint hint =
+                        hpx::execution::experimental::get_hint(policy);
+
+                    using placement = hpx::threads::thread_placement_hint;
+
+                    if (hint.placement_mode == placement::breadth_first ||
+                        hint.placement_mode == placement::breadth_first_reverse)
+                    {
+                        init_queue_breadth_first(
+                            index_queue, t, size, num_threads);
+                    }
+                    else
+                    {
+                        // the default for this scheduler is depth-first placement
+                        init_queue_depth_first(
+                            index_queue, t, size, num_threads);
+                    }
+
+                    auto&& launcher = [&, wrapped, index_queue](
                                           bool direct) mutable {
-                        hpx::util::cache_aligned_data<hpx::concurrency::detail::
-                                non_contiguous_index_queue<>>
-                            index_queue;
-                        index_queue.data_.reset(begin, end - direct);
+                        // reserve last task for direct execution, if needed
+                        std::optional<std::uint32_t> direct_index;
+                        if (direct)
+                            direct_index = index_queue.data_.pop_right();
+
                         hpx::optional<std::uint32_t> index;
                         while ((index = index_queue.data_.pop_left()))
                         {
-                            auto iter = std::next(it_begin, index.value());
+                            auto iter =
+                                std::next(std::begin(shape), index.value());
                             hpx::detail::post_policy_dispatch<Launch>::call(
                                 inner_post_policy, desc, pool, wrapped, *iter,
                                 ts...);
                         }
 
-                        // execute last task directly, if needed
+                        // execute last task directly
                         if (direct)
                         {
-                            auto iter = std::next(it_begin, end - 1);
+                            auto iter = std::next(
+                                std::begin(shape), direct_index.value());
                             HPX_INVOKE(wrapped, *iter, ts...);
                         }
                     };
@@ -203,12 +254,10 @@ namespace hpx { namespace parallel { namespace execution { namespace detail {
                         hpx::detail::post_policy_dispatch<Launch>::call(
                             post_policy, desc, pool, HPX_MOVE(launcher), true);
                     }
-                    else if (part_size != 0)
+                    else    //if (part_size != 0)
                     {
                         launcher(t == num_threads - 1);
                     }
-
-                    begin = end;
                 }
                 //HPX_ASSERT(end == size);
 
