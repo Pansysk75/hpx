@@ -49,31 +49,42 @@ namespace hpx { namespace parallel { namespace execution { namespace detail {
     using index_queue_type = hpx::util::cache_aligned_data<
         hpx::concurrency::detail::non_contiguous_index_queue<>>;
 
-    static void init_queue_depth_first(index_queue_type& queue,
+    template <typename Policy>
+    index_queue_type get_index_queue(Policy policy,
         std::uint32_t const worker_thread, std::uint32_t const size,
-        std::uint32_t num_threads) noexcept
+        std::uint32_t num_threads)
     {
-        auto const part_begin =
-            static_cast<std::uint32_t>((worker_thread * size) / num_threads);
-        auto const part_end = static_cast<std::uint32_t>(
-            ((worker_thread + 1) * size) / num_threads);
-        queue.data_.reset(part_begin, part_end);
-    }
+        index_queue_type queue;
+        // thread placement
+        hpx::threads::thread_schedule_hint hint =
+            hpx::execution::experimental::get_hint(policy);
 
-    static void init_queue_breadth_first(index_queue_type& queue,
-        std::uint32_t const worker_thread, std::uint32_t const size,
-        std::uint32_t num_threads) noexcept
-    {
-        auto const num_steps = size / num_threads + 1;
-        auto const part_begin = worker_thread;
-        auto part_end = (std::min)(
-            size + num_threads - 1, part_begin + num_steps * num_threads);
-        auto const remainder = (part_end - part_begin) % num_threads;
-        if (remainder != 0)
+        using placement = hpx::threads::thread_placement_hint;
+
+        if (hint.placement_mode == placement::breadth_first ||
+            hint.placement_mode == placement::breadth_first_reverse)
         {
-            part_end -= remainder;
+            auto const num_steps = size / num_threads + 1;
+            auto const part_begin = worker_thread;
+            auto part_end = (std::min)(
+                size + num_threads - 1, part_begin + num_steps * num_threads);
+            auto const remainder = (part_end - part_begin) % num_threads;
+            if (remainder != 0)
+            {
+                part_end -= remainder;
+            }
+            queue.data_.reset(part_begin, part_end, num_threads);
         }
-        queue.data_.reset(part_begin, part_end, num_threads);
+        else
+        {
+            // the default placement is depth-first
+            auto const part_begin = static_cast<std::uint32_t>(
+                (worker_thread * size) / num_threads);
+            auto const part_end = static_cast<std::uint32_t>(
+                ((worker_thread + 1) * size) / num_threads);
+            queue.data_.reset(part_begin, part_end);
+        }
+        return queue;
     }
 
     template <typename Launch, typename F, typename S, typename... Ts>
@@ -97,52 +108,47 @@ namespace hpx { namespace parallel { namespace execution { namespace detail {
             policy, threads::thread_stacksize::small_);
 
         hpx::latch l(size);
-        std::size_t part_begin = 0;
-        auto it = std::begin(shape);
+        size_t part_size = size / num_threads;
+
         for (std::size_t t = 0; t != num_threads; ++t)
         {
-            std::size_t const part_end = ((t + 1) * size) / num_threads;
-            std::size_t const part_size = part_end - part_begin;
-
             auto async_policy = hpx::execution::experimental::with_hint(policy,
                 threads::thread_schedule_hint{
                     static_cast<std::int16_t>(first_thread + t)});
 
+            auto index_queue = get_index_queue(policy, t, size, num_threads);
+
             if (part_size > hierarchical_threshold)
             {
-                hpx::detail::post_policy_dispatch<Launch>::call(post_policy,
-                    desc, pool,
-                    [&, part_begin, part_end, part_size, f, it]() mutable {
-                        for (std::size_t part_i = part_begin;
-                             part_i != part_end; ++part_i)
+                hpx::detail::post_policy_dispatch<Launch>::call(
+                    post_policy, desc, pool, [&, f]() mutable {
+                        hpx::optional<std::uint32_t> index;
+                        while ((index = index_queue.data_.pop_left()))
                         {
-                            results[part_i] =
+                            auto it =
+                                std::next(std::begin(shape), index.value());
+                            results[index.value()] =
                                 hpx::detail::async_launch_policy_dispatch<
                                     Launch>::call(async_policy, desc, pool, f,
                                     *it, ts...);
-                            ++it;
+                            l.count_down(1);
                         }
-                        l.count_down(part_size);
                     });
-
-                std::advance(it, part_size);
             }
             else
             {
-                for (std::size_t part_i = part_begin; part_i != part_end;
-                     ++part_i)
+                hpx::optional<std::uint32_t> index;
+                while ((index = index_queue.data_.pop_left()))
                 {
-                    results[part_i] =
+                    auto it = std::next(std::begin(shape), index.value());
+                    results[index.value()] =
                         hpx::detail::async_launch_policy_dispatch<Launch>::call(
                             async_policy, desc, pool, f, *it, ts...);
-                    ++it;
+                    l.count_down(1);
                 }
-                l.count_down(part_size);
             }
-
-            part_begin = part_end;
         }
-        HPX_ASSERT(it == hpx::util::end(shape));
+        // HPX_ASSERT(it == hpx::util::end(shape));
 
         l.wait();
 
@@ -199,26 +205,8 @@ namespace hpx { namespace parallel { namespace execution { namespace detail {
                             threads::thread_schedule_hint{
                                 static_cast<std::int16_t>(first_thread + t)});
 
-                    index_queue_type index_queue;
-
-                    // thread placement
-                    hpx::threads::thread_schedule_hint hint =
-                        hpx::execution::experimental::get_hint(policy);
-
-                    using placement = hpx::threads::thread_placement_hint;
-
-                    if (hint.placement_mode == placement::breadth_first ||
-                        hint.placement_mode == placement::breadth_first_reverse)
-                    {
-                        init_queue_breadth_first(
-                            index_queue, t, size, num_threads);
-                    }
-                    else
-                    {
-                        // the default for this scheduler is depth-first placement
-                        init_queue_depth_first(
-                            index_queue, t, size, num_threads);
-                    }
+                    auto index_queue =
+                        get_index_queue(policy, t, size, num_threads);
 
                     auto&& launcher = [&, wrapped, index_queue](
                                           bool direct) mutable {
