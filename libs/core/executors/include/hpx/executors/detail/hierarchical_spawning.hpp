@@ -238,7 +238,7 @@ namespace hpx { namespace parallel { namespace execution { namespace detail {
                         }
 
                         // execute last task directly
-                        if (direct)
+                        if (direct_index)
                         {
                             auto iter = std::next(
                                 std::begin(shape), direct_index.value());
