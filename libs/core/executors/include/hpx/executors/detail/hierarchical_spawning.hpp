@@ -155,56 +155,89 @@ namespace hpx { namespace parallel { namespace execution { namespace detail {
                         });
                     l.count_down(1);
                 };
+                using placement = hpx::threads::thread_placement_hint;
+                hpx::threads::thread_schedule_hint hint =
+                    hpx::execution::experimental::get_hint(policy);
+                bool is_breadth_first =
+                    (hint.placement_mode == placement::breadth_first ||
+                    hint.placement_mode == placement::breadth_first_reverse);
 
-                std::size_t begin = 0;
-                auto it = std::begin(shape);
-                for (std::size_t t = 0; t != num_threads; ++t)
+                bool is_reverse =
+                    hint.placement_mode == placement::depth_first_reverse ||
+                    hint.placement_mode == placement::breadth_first_reverse;
+
+                size_t part_begin, part_end, num_elements, step_size;
+
+                for (std::size_t t = 0; t != num_threads; ++t) //check if num_threads > size needed?
                 {
                     auto inner_post_policy =
                         hpx::execution::experimental::with_hint(policy,
                             threads::thread_schedule_hint{
                                 static_cast<std::int16_t>(first_thread + t)});
+                    
 
-                    std::size_t const end = ((t + 1) * size) / num_threads;
-                    std::size_t const part_size = end - begin;
-
-                    auto&& launcher = [&, wrapped, begin, end, it](
-                                          bool direct) mutable {
-                        // launch N-1 tasks
-                        auto iter = it;
-                        for (std::size_t i = begin + direct; i != end;
-                             (void) ++iter, ++i)
+                    // caclulate part_begin, part_end and step_size
+                    if (is_breadth_first)
+                    {
+                        step_size = num_threads;
+                        size_t num_steps = size / num_threads + 1;
+                        part_begin = t;
+                        part_end = (std::min)(
+                            size - 1, part_begin + num_steps * num_threads);
+                        auto const remainder =
+                            (part_end - part_begin) % num_threads;
+                        if (remainder != 0)
                         {
+                            part_end -= remainder;
+                        }
+                        num_elements =
+                            (part_end - part_begin + step_size) / step_size;
+                    }
+                    else
+                    {
+                        step_size = 1;
+                        part_begin = (t * size) / num_threads;
+                        part_end = ((t + 1) * size) / num_threads - 1;
+                        num_elements = part_end - part_begin + 1;
+                    }
+                    auto iter = (is_reverse) ?
+                        std::next(shape.begin(), part_end) :
+                        std::next(shape.begin(), part_begin);
+                    int step = (is_reverse) ?
+                        (int)-step_size :
+                        (int)step_size;
+             
+
+                    auto&& launcher = [&, wrapped, iter, step, num_elements]() mutable {
+                        hpx::detail::post_policy_dispatch<Launch>::call(
+                            inner_post_policy, desc, pool, wrapped, *iter,
+                            ts...);
+                        for (std::size_t i = 0; i <num_elements-1; i++)
+                        {
+                            std::advance(iter, step);
                             hpx::detail::post_policy_dispatch<Launch>::call(
-                                inner_post_policy, desc, pool, wrapped, *iter,
-                                ts...);
+                                inner_post_policy, desc, pool, wrapped,
+                               *iter, ts...);
                         }
 
-                        // execute last task directly, if needed
-                        if (direct)
-                        {
-                            HPX_INVOKE(wrapped, *iter, ts...);
-                        }
                     };
 
                     // launch a special thread to schedule work for each core,
                     // except the last one
                     if (t != num_threads - 1 &&
-                        part_size > hierarchical_threshold)
+                        num_elements > hierarchical_threshold)
                     {
                         hpx::detail::post_policy_dispatch<Launch>::call(
-                            post_policy, desc, pool, HPX_MOVE(launcher), true);
-                        std::advance(it, part_size);
+                            post_policy, desc, pool, HPX_MOVE(launcher));
                     }
-                    else if (part_size != 0)
+                    else if (num_elements != 0)
+                    
                     {
-                        launcher(t == num_threads - 1);
-                        std::advance(it, part_size);
+                        launcher();
                     }
 
-                    begin = end;
                 }
-                HPX_ASSERT(it == hpx::util::end(shape));
+                // HPX_ASSERT(it == hpx::util::end(shape));
 
                 l.wait();
 
