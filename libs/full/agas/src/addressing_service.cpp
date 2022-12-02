@@ -282,7 +282,7 @@ namespace hpx { namespace agas {
             // The locality hasn't been requested to be resolved yet. Do it now.
             parcelset::endpoints_type endpoints;
             {
-                hpx::util::unlock_guard<std::unique_lock<mutex_type>> ul(l);
+                hpx::unlock_guard<std::unique_lock<mutex_type>> ul(l);
                 endpoints = locality_ns_->resolve_locality(gid);
                 if (endpoints.empty())
                 {
@@ -2026,7 +2026,7 @@ namespace hpx { namespace agas {
             for (requests_type::iterator it = requests.begin(); it != end; ++it)
             {
                 server::primary_namespace::decrement_credit_action action;
-                hpx::apply(action, HPX_MOVE(it->first), HPX_MOVE(it->second));
+                hpx::post(action, HPX_MOVE(it->first), HPX_MOVE(it->second));
             }
 
             if (&ec != &throws)

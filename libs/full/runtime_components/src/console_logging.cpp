@@ -8,8 +8,8 @@
 #include <hpx/config.hpp>
 #include <hpx/agas/addressing_service.hpp>
 #include <hpx/assert.hpp>
-#include <hpx/async_distributed/applier/apply.hpp>
 #include <hpx/async_distributed/continuation.hpp>
+#include <hpx/async_distributed/detail/post.hpp>
 #include <hpx/components_base/agas_interface.hpp>
 #include <hpx/concurrency/spinlock.hpp>
 #include <hpx/datastructures/tuple.hpp>
@@ -96,7 +96,7 @@ namespace hpx { namespace components {
 
         try
         {
-            hpx::apply<server::console_logging_action<>>(prefix, msgs);
+            hpx::post<server::console_logging_action<>>(prefix, msgs);
         }
         catch (hpx::exception const& e)
         {
@@ -250,8 +250,7 @@ namespace hpx { namespace components {
             {
                 naming::gid_type raw_prefix;
                 {
-                    util::unlock_guard<std::unique_lock<prefix_mutex_type>> ul(
-                        l);
+                    unlock_guard<std::unique_lock<prefix_mutex_type>> ul(l);
                     naming::get_agas_client().get_console_locality(raw_prefix);
                 }
 
