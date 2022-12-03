@@ -78,67 +78,33 @@ namespace hpx { namespace parallel { namespace util {
                 scoped_executor_parameters scoped_params(
                     policy.parameters(), policy.executor());
 
-                std::vector<hpx::shared_future<Result1>> workitems;
+                std::vector<hpx::future<Result1>> workitems;
                 std::vector<hpx::future<Result2>> finalitems;
                 std::vector<Result1> f2results;
                 std::list<std::exception_ptr> errors;
                 try
                 {
-                    // pre-initialize first intermediate result
-                    workitems.push_back(
-                        make_ready_future(HPX_FORWARD(T, init)));
-
                     HPX_ASSERT(count > 0);
-                    FwdIter first_ = first;
-                    std::size_t count_ = count;
 
-                    // estimate a chunk size based on number of cores used
-                    typedef typename execution::extract_has_variable_chunk_size<
-                        parameters_type>::type has_variable_chunk_size;
-
-                    auto shape = detail::get_bulk_iteration_shape(
-                        has_variable_chunk_size(), policy, workitems, f1, first,
-                        count, 1);
+                    auto shape =
+                        detail::get_bulk_iteration_shape(policy, first, count);
 
                     // schedule every chunk on a separate thread
                     std::size_t size = hpx::util::size(shape);
 
-                    // If the size of count was enough to warrant testing for a
-                    // chunk, pre-initialize second intermediate result and
-                    // start f3.
-                    if (workitems.size() == 2)
-                    {
-                        HPX_ASSERT(count_ > count);
-
-                        workitems.reserve(size + 2);
-                        finalitems.reserve(size + 1);
-
-                        finalitems.push_back(
-                            execution::async_execute(policy.executor(), f3,
-                                first_, count_ - count, workitems[0].get()));
-
-                        workitems[1] = make_ready_future(HPX_INVOKE(
-                            f2, workitems[0].get(), workitems[1].get()));
-                    }
-                    else
-                    {
-                        workitems.reserve(size + 1);
-                        finalitems.reserve(size);
-                    }
+                    //TODO: implement testing thing I removed
 
                     // Schedule first step of scan algorithm, step 2 is
                     // performed when all f1 tasks are done
-                    for (auto const& elem : shape)
-                    {
-                        FwdIter it = hpx::get<0>(elem);
-                        std::size_t size = hpx::get<1>(elem);
-
-                        auto curr = execution::async_execute(
-                            policy.executor(), f1, it, size)
-                                        .share();
-
-                        workitems.push_back(curr);
-                    }
+                    workitems = execution::bulk_async_execute(
+                        policy.executor(),
+                        [f1](auto const& elem) {
+                            FwdIter it = hpx::get<0>(elem);
+                            std::size_t size = hpx::get<1>(elem);
+                            return HPX_INVOKE(f1, it, size);
+                            ;
+                        },
+                        shape);
 
                     // Wait for all f1 tasks to finish
                     if (hpx::wait_all_nothrow(workitems))
@@ -148,7 +114,7 @@ namespace hpx { namespace parallel { namespace util {
 
                     // perform f2 sequentially in one go
                     f2results.resize(workitems.size());
-                    auto result = workitems[0].get();
+                    auto result = init;
                     f2results[0] = result;
                     for (std::size_t i = 1; i < workitems.size(); i++)
                     {
@@ -157,14 +123,19 @@ namespace hpx { namespace parallel { namespace util {
                     }
 
                     // start all f3 tasks
-                    std::size_t i = 0;
-                    for (auto const& elem : shape)
-                    {
-                        finalitems.push_back(execution::async_execute(
-                            policy.executor(), f3, hpx::get<0>(elem),
-                            hpx::get<1>(elem), f2results[i]));
-                        i++;
-                    }
+
+                    auto _finalitems = execution::bulk_async_execute(
+                        policy.executor(),
+                        [f3, &shape, &f2results](auto i) mutable {
+                            auto iter = std::begin(shape);
+                            std::advance(iter, i);
+                            auto elem = *iter;
+                            return HPX_INVOKE(f3, hpx::get<0>(elem),
+                                hpx::get<1>(elem), f2results[i]);
+                        },
+                        shape.size());
+
+                    _finalitems.wait();
 
                     scoped_params.mark_end_of_scheduling();
                 }
