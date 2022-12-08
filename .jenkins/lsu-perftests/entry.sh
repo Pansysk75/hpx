@@ -52,10 +52,10 @@ cat jenkins-hpx-${configuration_name}.err
 # Get build status
 status_file="jenkins-hpx-${configuration_name}-ctest-status.txt"
 
-# Comment on the PR if any failures
-if [[ $(cat ${status_file}) != 0 ]]; then
-    ./.jenkins/lsu-perftests/comment_github.sh
-fi
+# # Comment on the PR if any failures
+# if [[ $(cat ${status_file}) != 0 ]]; then
+#     ./.jenkins/lsu-perftests/comment_github.sh
+# fi
 
 set -e
 exit $(cat ${status_file})
