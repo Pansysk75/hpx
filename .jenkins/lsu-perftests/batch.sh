@@ -37,7 +37,7 @@ mkdir -p ${build_dir}/reports
 logfile=${build_dir}/reports/jenkins-hpx-${configuration_name}.log
 
 # Load python packages
-# source /apps/daint/SSL/HPX/virtual_envs/perftests_env/bin/activate
+source /home/pansysk75/virtual_envs/perftests_env/bin/activate
 
 # Things went alright by default
 configure_build_errors=0
