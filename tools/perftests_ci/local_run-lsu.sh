@@ -14,7 +14,8 @@ build_dir=$PWD
 rm -rf ${build_dir}/reports/reference-comparison
 
 # Setup the environment (libs + python)
-source ${src_dir}/.jenkins/lsu/env-gcc-11.sh
+envfile=${src_dir}/.jenkins/lsu-perftests/env-perftests.sh
+source ${envfile}
 source /home/pansysk75/virtual_envs/perftests_env/bin/activate
 
 # Variables
