@@ -37,6 +37,7 @@ sbatch \
     --job-name="${job_name}" \
     --nodes="1" \
     --partition="${configuration_slurm_partition}" \
+    --nodelist="${configuration_slurm_nodelist}" \
     --time="03:00:00" \
     --output="jenkins-hpx-${configuration_name}.out" \
     --error="jenkins-hpx-${configuration_name}.err" \
