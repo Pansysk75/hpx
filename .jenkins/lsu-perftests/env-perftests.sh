@@ -13,4 +13,6 @@ module load boost/1.78.0-release
 module load hwloc
 module load openmpi
 
+
+export mimalloc_DIR="/home/pansysk75/libs/install/mimalloc"
 export CXX_STD="20"
