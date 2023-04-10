@@ -7,22 +7,33 @@
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
-set -ex
+# set -ex
 
 hpx_targets=(
-    "foreach_report_test"
-    "future_overhead_report_test"
-    "stream_report_test")
+    # "foreach_report_test"
+    # "future_overhead_report_test"
+    # "stream_report_test"
+    "partitioned_vector_foreach_report_test")
 hpx_test_options=(
+    # "--hpx:ini=hpx.thread_queue.init_threads_count=100 \
+    # --hpx:threads=4 --vector_size=104857 --work_delay=1 \
+    # --chunk_size=0 --test_count=5000"
+    # "--hpx:ini=hpx.thread_queue.init_threads_count=100 \
+    # --hpx:queuing=local-priority --hpx:threads=4 --test-all \
+    # --repetitions=500 --futures=207270"
+    # "--hpx:ini=hpx.thread_queue.init_threads_count=100 \
+    # --vector_size=518176 --hpx:threads=4 --iterations=5000 \
+    # --warmup_iterations=500"
     "--hpx:ini=hpx.thread_queue.init_threads_count=100 \
-    --hpx:threads=4 --vector_size=104857 --work_delay=1 \
-    --chunk_size=0 --test_count=5000"
-    "--hpx:ini=hpx.thread_queue.init_threads_count=100 \
-    --hpx:queuing=local-priority --hpx:threads=4 --test-all \
-    --repetitions=500 --futures=207270"
-    "--hpx:ini=hpx.thread_queue.init_threads_count=100 \
-    --vector_size=518176 --hpx:threads=4 --iterations=5000 \
-    --warmup_iterations=500")
+    --hpx:threads=4 --vector_size=104857 --test_count=5000")
+
+# May leave empty for non-distributed tests
+hpx_test_preamble=(
+    # ""
+    # ""
+    # ""
+    "salloc -p 'medusa' -w 'medusa[07-08]' -n 2 -t 0:10:00"
+)
 
 # Build binaries for performance tests
 ${perftests_dir}/driver.py -v -l $logfile build -b release -o build \
@@ -40,13 +51,14 @@ result_files=""
 # Run and compare for each targets specified
 for executable in "${hpx_targets[@]}"; do
     test_opts=${hpx_test_options[$index]}
+    test_preamble=${hpx_test_preamble[$index]}
     result=${build_dir}/reports/${executable}.json
     reference=${perftests_dir}/perftest/references/lsu_default/${executable}.json
     result_files+=(${result})
     references_files+=(${reference})
     logfile_tmp=log_perftests_${executable}.tmp
 
-    run_command=("./bin/${executable} ${test_opts}")
+    run_command=("${test_preamble} ./bin/${executable} ${test_opts}")
 
     # TODO: make schedulers and other options vary
 
