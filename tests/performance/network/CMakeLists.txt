@@ -14,7 +14,11 @@ foreach(subdir ${subdirs})
   )
 endforeach()
 
-set(benchmarks pingpong_performance pingpong_performance2)
+set(benchmarks 
+    pingpong_performance
+    pingpong_performance_report
+    pingpong_performance2
+    )
 
 foreach(benchmark ${benchmarks})
 

@@ -12,57 +12,52 @@ set -ex
 hpx_targets=(
     "foreach_report_test"
     "future_overhead_report_test"
-    "stream_report_test")
+    "stream_report_test"
+    )
 hpx_test_options=(
     "--hpx:ini=hpx.thread_queue.init_threads_count=100 \
-    --hpx:threads=4 --vector_size=104857 --work_delay=1 \
+    --vector_size=104857 --work_delay=1 \
     --chunk_size=0 --test_count=200"
     "--hpx:ini=hpx.thread_queue.init_threads_count=100 \
-    --hpx:queuing=local-priority --hpx:threads=4 --test-all \
+    --hpx:queuing=local-priority --test-all \
     --repetitions=40 --futures=207270"
     "--hpx:ini=hpx.thread_queue.init_threads_count=100 \
-    --vector_size=518176 --hpx:threads=4 --iterations=200 \
+    --vector_size=518176 --iterations=200 \
     --warmup_iterations=20")
 
 
-    #     "--hpx:ini=hpx.thread_queue.init_threads_count=100 \
-    # --hpx:threads=4 --vector_size=10000 --work_delay=1 \
-    # --chunk_size=0 --test_count=5000"
-    # "--hpx:ini=hpx.thread_queue.init_threads_count=100 \
-    # --hpx:queuing=local-priority --hpx:threads=4 --test-all \
-    # --repetitions=100 --futures=500000"
-    # "--hpx:ini=hpx.thread_queue.init_threads_count=100 \
-    # --vector_size=1048576 --hpx:threads=4 --iterations=5000 \
-    # --warmup_iterations=500")
+hpx_distributed_targets=(
+    "pingpong_performance_report"
+)
+hpx_distributed_test_options=(
+    "--test_count=200"
+)
 
+
+hpx_targets_all=( "${hpx_targets[@]}" "${hpx_distributed_targets[@]}")
 # Build binaries for performance tests
 ${perftests_dir}/driver.py -v -l $logfile build -b release -o build \
     --source-dir ${src_dir} --build-dir ${build_dir} -e $envfile \
-    -t "${hpx_targets[@]}" ||
+    -t "${hpx_targets_all[@]}" ||
     {
         echo 'Build failed'
         configure_build_errors=1
         exit 1
     }
 
-index=0
-result_files=""
 
-n_executions=50
-
-# Run and compare for each targets specified
-for executable in "${hpx_targets[@]}"; do
-    test_opts=${hpx_test_options[$index]}
+run_test(){
     result=${build_dir}/reports/${executable}.json
-
     reference=${perftests_dir}/perftest/references/lsu_default/${executable}.json
     result_files+=(${result})
     references_files+=(${reference})
     logfile_tmp=log_perftests_${executable}.tmp
 
-    run_command=("./bin/${executable} ${test_opts}")
-
-    # TODO: make schedulers and other options vary
+    if [ "${is_distributed}" -eq 0 ]; then
+        run_command=("${build_dir}/bin/hpxrun.py ${build_dir}/bin/${executable} -t 4 -- ${test_opts}")
+    else
+        run_command=("${build_dir}/bin/hpxrun.py ${build_dir}/bin/${executable} -l 2 -t 4 --parcelport mpi -- ${test_opts}")
+    fi
 
     # Run performance tests
     ${perftests_dir}/driver.py -v -l $logfile_tmp perftest run --local True \
@@ -72,6 +67,30 @@ for executable in "${hpx_targets[@]}"; do
             test_errors=1
             exit 1
         }
+}
+
+n_executions=10
+result_files=""
+ 
+# Run tests
+index=0
+for executable in "${hpx_targets[@]}"; do
+    test_opts=${hpx_test_options[$index]}
+    is_distributed=0
+
+    run_test
+
+    index=$((index + 1))
+done
+
+
+# Run distributed tests
+index=0
+for executable in "${hpx_distributed_targets[@]}"; do
+    test_opts=${hpx_distributed_test_options[$index]}
+    is_distributed=1
+
+    run_test
 
     index=$((index + 1))
 done
