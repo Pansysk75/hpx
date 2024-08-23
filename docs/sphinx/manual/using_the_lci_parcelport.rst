@@ -38,14 +38,14 @@ Its message transmission path involves minimum synchronization
 points and is almost lock-free. It is expected to be much faster
 than the MPI parcelport.
 
-.. _`Lightweight Communication Interface`: https://github.com/uiuc-hpc/LC
+.. _`Lightweight Communication Interface`: https://github.com/uiuc-hpc/lci
 
 .. _build_lci_pp:
 
 Build |hpx| with the LCI parcelport
 ===================================
 
-While building |hpx|, you can specify a set of |cmake| variables to enable
+While building |hpx|, you can specify a set of |cmake|_ variables to enable
 and configure the LCI parcelport. Below, there is a set of the most important
 and frequently used CMake variables.
 
@@ -61,12 +61,12 @@ and frequently used CMake variables.
 
    Use FetchContent to fetch LCI. The default value is ``OFF``.
    If this option is set to ``OFF``. You need to install your own LCI library and |hpx| will try
-   to find it using |cmake| ``find_package``. You can specify the location of the LCI installation
+   to find it using |cmake|_ ``find_package``. You can specify the location of the LCI installation
    by the environmental variable ``LCI_ROOT``. Refer to the `LCI README`_ for how to install LCI.
    If this option is set to ``ON``. |hpx| will fetch and build LCI for you. You can use the following
-   |cmake| variables to configure this behavior for your platform.
+   |cmake|_ variables to configure this behavior for your platform.
 
-.. _`LCI README`: https://github.com/uiuc-hpc/LC#readme
+.. _`LCI README`: https://github.com/uiuc-hpc/lci#readme
 
 .. option:: HPX_WITH_LCI_TAG
 
@@ -89,13 +89,18 @@ Run |hpx| with the LCI parcelport
 =================================
 
 We use the same mechanisms as MPI to launch LCI, so you can use the same way you run MPI parcelport to run LCI
-parcelport. Typically, it would be ``hpxrun``, ``mpirun``, or ``srun``.
+parcelport. Typically, it would be ``hpxrun.py``, ``mpirun``, or ``srun``.
 
-If you are using ``hpxrun.py``, just pass ``--parcelport lci`` to the scripts.
+``hpxrun.py`` serves as a wrapper for ``mpirun`` and ``srun``.
+If you are using ``hpxrun.py``, pass ``-p lci`` to the scripts. You also need to pass either ``-r mpi`` or
+``-r srun`` to select the correct run wrapper according to the platform.
 
 If you are using ``mpirun`` or ``srun``, you can just pass
 ``--hpx:ini=hpx.parcel.lci.priority=1000``, ``--hpx:ini=hpx.parcel.lci.enable=1``, and
 ``--hpx:ini=hpx.parcel.bootstrap=lci`` to the |hpx| applications.
+
+The ``hpxrun.py`` argument ``-r none`` (the default option for the run wrapper) and its corresponding |hpx| arguments
+``--hpx:hpx`` and ``--hpx:agas`` do not work for the MPI or the LCI parcelport.
 
 .. _tune_lci_pp:
 

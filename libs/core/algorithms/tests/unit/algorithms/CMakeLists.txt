@@ -33,6 +33,7 @@ set(tests
     countif
     destroy
     destroyn
+    distance
     ends_with
     equal
     equal_binary
@@ -176,6 +177,10 @@ foreach(test ${tests})
     EXCLUDE_FROM_ALL
     HPX_PREFIX ${HPX_BUILD_PREFIX}
     FOLDER ${folder_name}
+  )
+
+  target_link_libraries(
+    ${test}_test PRIVATE hpx_iterator_support_test_utilities
   )
 
   add_hpx_unit_test(

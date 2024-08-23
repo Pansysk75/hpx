@@ -1,4 +1,4 @@
-//  Copyright (c) 2007-2023 Hartmut Kaiser
+//  Copyright (c) 2007-2024 Hartmut Kaiser
 //
 //  SPDX-License-Identifier: BSL-1.0
 //  Distributed under the Boost Software License, Version 1.0. (See accompanying
@@ -17,12 +17,13 @@
 #include <hpx/futures/traits/future_access.hpp>
 #include <hpx/futures/traits/get_remote_result.hpp>
 #include <hpx/modules/errors.hpp>
+#include <hpx/modules/lock_registration.hpp>
 #include <hpx/modules/memory.hpp>
 #include <hpx/synchronization/condition_variable.hpp>
 #include <hpx/synchronization/spinlock.hpp>
-#include <hpx/thread_support/assert_owns_lock.hpp>
 #include <hpx/thread_support/atomic_count.hpp>
 #include <hpx/threading_base/thread_helpers.hpp>
+#include <hpx/type_support/assert_owns_lock.hpp>
 #include <hpx/type_support/construct_at.hpp>
 #include <hpx/type_support/unused.hpp>
 
@@ -98,7 +99,7 @@ namespace hpx::lcos::detail {
 
         virtual ~future_data_refcnt_base();
 
-        virtual void set_on_completed(completed_callback_type) = 0;
+        virtual void set_on_completed(completed_callback_type&&) = 0;
 
         HPX_FORCEINLINE bool requires_delete() noexcept
         {
@@ -219,6 +220,12 @@ namespace hpx::lcos::detail {
     template <typename Result>
     struct future_data_base;
 
+    // make sure continuation invocation does not recurse deeper than allowed
+    HPX_CORE_EXPORT void handle_on_completed(
+        future_data_refcnt_base::completed_callback_type&& on_completed);
+    HPX_CORE_EXPORT void handle_on_completed(
+        future_data_refcnt_base::completed_callback_vector_type&& on_completed);
+
     template <>
     struct HPX_CORE_EXPORT future_data_base<traits::detail::future_data_void>
       : future_data_refcnt_base
@@ -337,15 +344,10 @@ namespace hpx::lcos::detail {
         static void run_on_completed(
             completed_callback_vector_type&& on_completed) noexcept;
 
-        // make sure continuation invocation does not recurse deeper than
-        // allowed
-        template <typename Callback>
-        static void handle_on_completed(Callback&& on_completed);
-
         // Set the callback which needs to be invoked when the future becomes
         // ready. If the future is ready the function will be invoked
         // immediately.
-        void set_on_completed(completed_callback_type data_sink) override;
+        void set_on_completed(completed_callback_type&& data_sink) override;
 
         virtual state wait(error_code& ec = throws);
 
@@ -396,14 +398,13 @@ namespace hpx::lcos::detail {
     public:
         using result_type = future_data_result_t<Result>;
         using base_type = future_data_base<traits::detail::future_data_void>;
-        using init_no_addref = typename base_type::init_no_addref;
-        using completed_callback_type =
-            typename base_type::completed_callback_type;
+        using init_no_addref = base_type::init_no_addref;
+        using completed_callback_type = base_type::completed_callback_type;
         using completed_callback_vector_type =
-            typename base_type::completed_callback_vector_type;
+            base_type::completed_callback_vector_type;
 
     protected:
-        using mutex_type = typename base_type::mutex_type;
+        using mutex_type = base_type::mutex_type;
 
     public:
         // Variable 'hpx::lcos::detail::future_data_base<void>::storage_' is
@@ -504,6 +505,7 @@ namespace hpx::lcos::detail {
             // At this point the lock needs to be acquired to safely access the
             // registered continuations
             std::unique_lock<mutex_type> l(mtx_);
+            [[maybe_unused]] util::ignore_while_checking il(&l);
 
             // handle all threads waiting for the future to become ready
             auto on_completed = HPX_MOVE(on_completed_);
@@ -536,12 +538,15 @@ namespace hpx::lcos::detail {
 #endif
 
             // Note: we use notify_one repeatedly instead of notify_all as we
-            //       know: a) that most of the time we have at most one thread
-            //       waiting on the future (most futures are not shared), and
-            //       b) our implementation of condition_variable::notify_one
-            //       relinquishes the lock before resuming the waiting thread
-            //       that avoids suspension of this thread when it tries to
-            //       re-lock the mutex while exiting from condition_variable::wait
+            //       know:
+            //
+            //       a. that most of the time we have at most one thread
+            //          waiting on the future (most futures are not shared), and
+            //       b. our implementation of condition_variable::notify_one
+            //          relinquishes the lock before resuming the waiting thread
+            //          that avoids suspension of this thread when it tries to
+            //          re-lock the mutex while exiting from
+            //          condition_variable::wait
             while (
                 cond_.notify_one(HPX_MOVE(l), threads::thread_priority::boost))
             {
@@ -551,6 +556,7 @@ namespace hpx::lcos::detail {
             // Note: cv.notify_one() above 'consumes' the lock 'l' and leaves
             //       it unlocked when returning.
             HPX_ASSERT_DOESNT_OWN_LOCK(l);
+            il.reset_owns_registration();
 
             // invoke the callback (continuation) function
             if (!on_completed.empty())
@@ -599,6 +605,7 @@ namespace hpx::lcos::detail {
             // At this point the lock needs to be acquired to safely access the
             // registered continuations
             std::unique_lock<mutex_type> l(mtx_);
+            [[maybe_unused]] util::ignore_while_checking il(&l);
 
             // handle all threads waiting for the future to become ready
             auto on_completed = HPX_MOVE(on_completed_);
@@ -631,12 +638,15 @@ namespace hpx::lcos::detail {
 #endif
 
             // Note: we use notify_one repeatedly instead of notify_all as we
-            //       know: a) that most of the time we have at most one thread
-            //       waiting on the future (most futures are not shared), and
-            //       b) our implementation of condition_variable::notify_one
-            //       relinquishes the lock before resuming the waiting thread
-            //       that avoids suspension of this thread when it tries to
-            //       re-lock the mutex while exiting from condition_variable::wait
+            //       know:
+            //
+            //       a. that most of the time we have at most one thread
+            //          waiting on the future (most futures are not shared), and
+            //       b. our implementation of condition_variable::notify_one
+            //          relinquishes the lock before resuming the waiting thread
+            //          that avoids suspension of this thread when it tries to
+            //          re-lock the mutex while exiting from
+            //          condition_variable::wait
             while (
                 cond_.notify_one(HPX_MOVE(l), threads::thread_priority::boost))
             {
@@ -646,6 +656,7 @@ namespace hpx::lcos::detail {
             // Note: cv.notify_one() above 'consumes' the lock 'l' and leaves
             //       it unlocked when returning.
             HPX_ASSERT_DOESNT_OWN_LOCK(l);
+            il.reset_owns_registration();
 
             // invoke the callback (continuation) function
             if (!on_completed.empty())
