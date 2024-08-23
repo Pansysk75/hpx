@@ -102,7 +102,7 @@ namespace hpx::traits {
             HPX_FORCEINLINE static void transfer_result(
                 Derived&& src, Destination& dest)
             {
-                dest.set_value(src.get());
+                dest.set_value_fancy(& src, 0, src.get());
 
                 using extra_client_data = typename Derived::extra_data_type;
                 using shared_state_type = typename Derived::shared_state_type;
@@ -196,11 +196,13 @@ struct HPX_EXPORT hpx::lcos::detail::future_data<hpx::id_type>
     HPX_NON_COPYABLE(future_data);
 
     using init_no_addref = future_data_base<hpx::id_type>::init_no_addref;
+    using debug_data_t = future_data_base<hpx::id_type>::debug_data_t;
 
     future_data() = default;
 
-    explicit future_data(init_no_addref no_addref)
-      : future_data_base(no_addref)
+    explicit future_data(
+        init_no_addref no_addref, debug_data_t dbd = debug_data_t())
+      : future_data_base(no_addref, dbd)
     {
     }
 
@@ -210,12 +212,14 @@ struct HPX_EXPORT hpx::lcos::detail::future_data<hpx::id_type>
     {
     }
 
-    future_data(init_no_addref no_addref, std::exception_ptr const& e)
-      : future_data_base(no_addref, e)
+    future_data(init_no_addref no_addref, std::exception_ptr const& e,
+        debug_data_t dbd = debug_data_t())
+      : future_data_base(no_addref, e, dbd)
     {
     }
-    future_data(init_no_addref no_addref, std::exception_ptr&& e)
-      : future_data_base(no_addref, HPX_MOVE(e))
+    future_data(init_no_addref no_addref, std::exception_ptr&& e,
+        debug_data_t dbd = debug_data_t())
+      : future_data_base(no_addref, HPX_MOVE(e), dbd)
     {
     }
 
@@ -227,7 +231,7 @@ struct HPX_EXPORT hpx::lcos::detail::future_data<hpx::id_type>
         tidy();
     }
 
-    void tidy() const noexcept;
+    void tidy() noexcept;
 
     [[nodiscard]] std::string const& get_registered_name() const noexcept;
     void set_registered_name(std::string name);
@@ -347,10 +351,12 @@ namespace hpx::components {
         // A future to a client_base can unwrap to represent the client_base
         // directly as a client_base is semantically a future to the id of the
         // referenced object.
-        client_base(hpx::future<Derived>&& d)
+        client_base(hpx::future<Derived>&& d,
+            base_shared_state_type::debug_data_t dbd = {})
           : shared_state_(
                 d.valid() ? lcos::detail::unwrap(HPX_MOVE(d)) : nullptr)
         {
+            shared_state_->set_debug_data(dbd);
         }
 
         ~client_base() = default;

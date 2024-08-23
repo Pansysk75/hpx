@@ -257,6 +257,11 @@ struct partition : hpx::components::client_base<partition, partition_server>
     {
     }
 
+    partition(hpx::future<partition>&& c, std::string&& debug_str)
+      : base_type(std::move(c), std::move(debug_str))
+    {
+    }
+
     ///////////////////////////////////////////////////////////////////////////
     // Invoke the (remote) member function which gives us access to the data.
     // This is a pure helper function hiding the async.
@@ -292,7 +297,7 @@ struct stepper
         hpx::shared_future<partition_data> middle_data =
             middle.get_data(partition_server::middle_partition);
 
-        hpx::future<partition_data> next_middle = middle_data.then(
+        hpx::shared_future<partition_data> next_middle = middle_data.then(
             unwrapping([middle](partition_data const& m) -> partition_data {
                 HPX_UNUSED(middle);
 
@@ -305,26 +310,28 @@ struct stepper
                 return next;
             }));
 
-        return dataflow(hpx::launch::async,
-            unwrapping([left, middle, right](partition_data next,
-                           partition_data const& l, partition_data const& m,
-                           partition_data const& r) -> partition {
-                HPX_UNUSED(left);
-                HPX_UNUSED(right);
+        return partition(
+            dataflow(hpx::launch::async,
+                unwrapping([left, middle, right, next_middle, middle_data](
+                               partition_data next, partition_data const& l,
+                               partition_data const& m,
+                               partition_data const& r) -> partition {
+                    HPX_UNUSED(left);
+                    HPX_UNUSED(right);
 
-                // Calculate the missing boundary elements once the
-                // corresponding data has become available.
-                std::size_t size = m.size();
-                next[0] = heat(l[size - 1], m[0], m[1]);
-                next[size - 1] = heat(m[size - 2], m[size - 1], r[0]);
+                    // Calculate the missing boundary elements once the
+                    // corresponding data has become available.
+                    std::size_t size = m.size();
+                    next[0] = heat(l[size - 1], m[0], m[1]);
+                    next[size - 1] = heat(m[size - 2], m[size - 1], r[0]);
 
-                // The new partition_data will be allocated on the same locality
-                // as 'middle'.
-                return partition(middle.get_id(), std::move(next));
-            }),
-            std::move(next_middle),
-            left.get_data(partition_server::left_partition), middle_data,
-            right.get_data(partition_server::right_partition));
+                    // The new partition_data will be allocated on the same locality
+                    // as 'middle'.
+                    return partition(middle.get_id(), std::move(next));
+                }),
+                next_middle, left.get_data(partition_server::left_partition),
+                middle_data, right.get_data(partition_server::right_partition)),
+            std::string("1"));
     }
     //]
 
@@ -350,30 +357,40 @@ stepper::space stepper::do_work(std::size_t np, std::size_t nx, std::size_t nt)
     std::size_t nl = localities.size();    // Number of localities
 
     // U[t][i] is the state of position i at time t.
-    std::vector<space> U(2);
+    std::vector<space> U(4);
     for (space& s : U)
         s.resize(np);
 
     // Initial conditions: f(0, i) = i
     for (std::size_t i = 0; i != np; ++i)
-        U[0][i] = partition(localities[locidx(i, np, nl)], nx, double(i));
+        U[0][i] = partition(localities[locidx(i, np, nl)], nx,
+            (i % 2 ? double(69.0) : double(42.0)));
 
     // limit depth of dependency tree
-    std::size_t nd = 3;
+    std::size_t nd = 2;
     auto sem = std::make_shared<hpx::sliding_semaphore>(nd);
 
     heat_part_action act;
     for (std::size_t t = 0; t != nt; ++t)
     {
-        space const& current = U[t % 2];
-        space& next = U[(t + 1) % 2];
+        space const& current = U[t % 4];
+        space& next = U[(t + 1) % 4];
 
         for (std::size_t i = 0; i != np; ++i)
         {
             // we execute the action on the locality of the middle partition
             auto Op = hpx::bind_front(act, localities[locidx(i, np, nl)]);
-            next[i] = dataflow(hpx::launch::async, Op, current[idx(i, -1, np)],
-                current[i], current[idx(i, +1, np)]);
+            // next[i] = dataflow(hpx::launch::async, Op, current[idx(i, -1, np)],
+            //     current[i], current[idx(i, +1, np)]);
+            next[i] = partition(
+                hpx::async(
+                    [Op, current](partition const& left,
+                        partition const& middle, partition const& right) {
+                        return Op(left, middle, right);
+                    },
+                    current[idx(i, -1, np)], current[i],
+                    current[idx(i, +1, np)]),
+                std::string("2"));
         }
 
         if ((t % nd) == 0)
@@ -390,7 +407,7 @@ stepper::space stepper::do_work(std::size_t np, std::size_t nx, std::size_t nt)
     }
 
     // Return the solution at time-step 'nt'.
-    return U[nt % 2];
+    return U[nt % 4];
 }
 
 ///////////////////////////////////////////////////////////////////////////////

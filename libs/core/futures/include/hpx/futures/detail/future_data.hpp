@@ -225,16 +225,37 @@ namespace hpx::lcos::detail {
     {
         using mutex_type = hpx::spinlock;
 
-        future_data_base() noexcept
+        struct debug_data_t
+        {
+            std::string dbg_str_;
+
+            debug_data_t()
+              : dbg_str_(std::string())
+            {
+            }
+
+            debug_data_t(std::string&& dbg_str)
+              : dbg_str_(dbg_str)
+            {
+            }
+
+        };
+
+        future_data_base(debug_data_t dbd = debug_data_t()) noexcept
           : state_(empty)
           , runs_child_(threads::invalid_thread_id)
+          , p_debug_data(dbd)
+          , p_who_set_me(nullptr)
         {
         }
 
-        explicit future_data_base(init_no_addref no_addref) noexcept
+        explicit future_data_base(init_no_addref no_addref,
+            debug_data_t dbd = debug_data_t()) noexcept
           : future_data_refcnt_base(no_addref)
           , state_(empty)
           , runs_child_(threads::invalid_thread_id)
+          , p_debug_data(dbd)
+          , p_who_set_me(nullptr)
         {
         }
 
@@ -255,8 +276,10 @@ namespace hpx::lcos::detail {
             empty = 0,
             ready = 1,
             value = 2 | ready,
-            exception = 4 | ready
+            exception = 4 | ready,
+            deleted = 8
         };
+
 
         // Return whether the data is available for this \a future.
         bool is_ready(
@@ -295,6 +318,16 @@ namespace hpx::lcos::detail {
         virtual result_type* get_result_void(error_code& ec = throws) = 0;
 
         virtual void set_exception(std::exception_ptr data) = 0;
+
+       debug_data_t get_debug_data() const
+        {
+            return p_debug_data;
+        }
+
+        void set_debug_data(debug_data_t dbd)
+        {
+            this->p_debug_data = dbd;
+        }
 
         // continuation support
 
@@ -338,6 +371,9 @@ namespace hpx::lcos::detail {
         completed_callback_vector_type on_completed_;
         local::detail::condition_variable cond_;    // threads waiting in read
         threads::thread_id_ref_type runs_child_;
+
+        debug_data_t p_debug_data;
+        future_data_base* p_who_set_me;
     };
 
     template <typename Result>
@@ -379,8 +415,9 @@ namespace hpx::lcos::detail {
 
         future_data_base() = default;
 
-        explicit future_data_base(init_no_addref no_addref) noexcept
-          : base_type(no_addref)
+        explicit future_data_base(
+            init_no_addref no_addref, debug_data_t dbd = debug_data_t()) noexcept
+          : base_type(no_addref, dbd)
         {
         }
 
@@ -397,9 +434,9 @@ namespace hpx::lcos::detail {
             state_.store(value, std::memory_order_relaxed);
         }
 
-        future_data_base(
-            init_no_addref no_addref, std::exception_ptr e) noexcept
-          : base_type(no_addref)
+        future_data_base(init_no_addref no_addref, std::exception_ptr e,
+            debug_data_t dbd = debug_data_t()) noexcept
+          : base_type(no_addref, dbd)
         {
             auto* exception_ptr =
                 reinterpret_cast<std::exception_ptr*>(&storage_);
@@ -524,6 +561,24 @@ namespace hpx::lcos::detail {
 #if defined(HPX_MSVC)
 #pragma warning(pop)
 #endif
+        }
+
+        template <typename P, typename... Ts>
+        void set_value_fancy(P* who_set_me, unsigned int debug_data, Ts&&... ts)
+        {
+            set_value(HPX_FORWARD(Ts, ts)...);
+        }
+
+        template <typename... Ts>
+        void set_value_fancy(
+            future_data_base<traits::detail::future_data_void>* who_set_me,
+            debug_data_t debug_data,
+            Ts&&... ts)
+        {
+            this->p_who_set_me = who_set_me;
+            this->p_debug_data =
+                future_data_base::debug_data_t(debug_data, who_set_me->get_debug_data());
+            set_value(HPX_FORWARD(Ts, ts)...);
         }
 
         void set_exception(std::exception_ptr data) override
@@ -670,6 +725,8 @@ namespace hpx::lcos::detail {
             }
 
             on_completed_.clear();
+            p_debug_data = debug_data_t();
+            p_who_set_me = nullptr;
         }
 
         std::exception_ptr get_exception_ptr() const override

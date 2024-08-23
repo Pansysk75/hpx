@@ -43,8 +43,9 @@ namespace hpx::util {
 
 namespace hpx::lcos::detail {
 
-    void future_data<hpx::id_type>::tidy() const noexcept
+    void future_data<hpx::id_type>::tidy() noexcept
     {
+        this->state_.store(future_data::state::deleted);
         hpx::util::extra_data_helper<registered_name_tracker>::reset(
             try_get_extra_data<registered_name_tracker>());
     }

@@ -413,7 +413,7 @@ namespace hpx::lcos::detail {
 
         template <typename Outer>
         void on_outer_ready(
-            traits::detail::shared_state_ptr_for_t<Outer>&& outer_state)
+            traits::detail::shared_state_ptr_for_t<Outer>&& outer_state, std::string&& inner_dbg_msg)
         {
             using inner_future = traits::future_traits_t<Outer>;
             using inner_shared_state_ptr =
@@ -441,7 +441,7 @@ namespace hpx::lcos::detail {
                             "unwrap_continuation<ContResult>::on_outer_ready",
                             "the inner future has no valid shared state");
                     }
-
+                    ptr->set_debug_data(HPX_MOVE(inner_dbg_msg));
                     ptr->execute_deferred();
                     ptr->set_on_completed(
                         [this_ = HPX_MOVE(this_),
@@ -466,7 +466,9 @@ namespace hpx::lcos::detail {
         }
 
         template <typename Future>
-        void attach(Future&& future)
+        void attach(Future&& future,
+            std::string&& outer_dbg_msg,
+            std::string&& inner_dbg_msg)
         {
             using outer_shared_state_ptr =
                 traits::detail::shared_state_ptr_for_t<Future>;
@@ -487,11 +489,14 @@ namespace hpx::lcos::detail {
                     "the future has no valid shared state");
             }
 
+            ptr->set_debug_data(HPX_MOVE(outer_dbg_msg));
             ptr->execute_deferred();
             ptr->set_on_completed(
                 [this_ = HPX_MOVE(this_),
-                    outer = HPX_MOVE(outer_state)]() mutable -> void {
-                    this_->template on_outer_ready<Future>(HPX_MOVE(outer));
+                    outer = HPX_MOVE(outer_state),
+                    inner_dbg_msg = HPX_MOVE(inner_dbg_msg)]() mutable -> void {
+                    this_->template on_outer_ready<Future>(
+                        HPX_MOVE(outer), HPX_MOVE(inner_dbg_msg));
                 });
         }
     };
@@ -545,7 +550,9 @@ namespace hpx::lcos::detail {
 
     template <typename Allocator, typename Future>
     inline traits::detail::shared_state_ptr_t<future_unwrap_result_t<Future>>
-    unwrap_impl_alloc(Allocator const& a, Future&& future, error_code& /*ec*/)
+    unwrap_impl_alloc(Allocator const& a, Future&& future, error_code& /*ec*/,
+        std::string&& outer_dbg_msg,
+        std::string&& inner_dbg_msg)
     {
         using base_allocator = Allocator;
         using result_type = future_unwrap_result_t<Future>;
@@ -572,7 +579,8 @@ namespace hpx::lcos::detail {
         hpx::traits::detail::shared_state_ptr_t<result_type> result(
             p.release(), false);
         static_cast<shared_state*>(result.get())
-            ->attach(HPX_FORWARD(Future, future));
+            ->attach(HPX_FORWARD(Future, future), HPX_MOVE(outer_dbg_msg),
+                HPX_MOVE(inner_dbg_msg));
         return result;
     }
 
@@ -589,7 +597,19 @@ namespace hpx::lcos::detail {
     {
         using allocator_type = hpx::util::thread_local_caching_allocator<char,
             hpx::util::internal_allocator<>>;
-        return unwrap_impl_alloc(
-            allocator_type{}, HPX_FORWARD(Future, future), ec);
+        return unwrap_impl_alloc(allocator_type{}, HPX_FORWARD(Future, future),
+            ec, std::string(), std::string());
+    }
+
+    template <typename Future>
+    inline traits::detail::shared_state_ptr_t<future_unwrap_result_t<Future>>
+    unwrap(Future&& future, error_code& ec,
+        std::string outer_dbg_msg,
+        std::string inner_dbg_msg)
+    {
+        using allocator_type = hpx::util::thread_local_caching_allocator<char,
+            hpx::util::internal_allocator<>>;
+        return unwrap_impl_alloc(allocator_type{}, HPX_FORWARD(Future, future),
+            ec, HPX_MOVE(outer_dbg_msg), HPX_MOVE(inner_dbg_msg));
     }
 }    // namespace hpx::lcos::detail
