@@ -407,7 +407,8 @@ namespace hpx::lcos::detail {
     private:
         template <typename Outer>
         void on_outer_ready(
-            traits::detail::shared_state_ptr_for_t<Outer>&& outer_state, std::string&& inner_dbg_msg)
+            traits::detail::shared_state_ptr_for_t<Outer>&& outer_state,
+            std::array<char, 8>&& inner_dbg_msg)
         {
             using inner_future = traits::future_traits_t<Outer>;
             using inner_shared_state_ptr =
@@ -453,7 +454,7 @@ namespace hpx::lcos::detail {
 
     public:
         using init_no_addref = typename future_data<ContResult>::init_no_addref;
-
+        using debug_data_t = typename future_data<ContResult>::debug_data_t;
         unwrap_continuation() = default;
 
         explicit unwrap_continuation(init_no_addref no_addref) noexcept
@@ -461,10 +462,14 @@ namespace hpx::lcos::detail {
         {
         }
 
+        explicit unwrap_continuation(init_no_addref no_addref, std::array<char, 8> dbg_msg) noexcept
+          : future_data<ContResult>(no_addref, debug_data_t{dbg_msg})
+        {
+        }
+
         template <typename Future>
-        void attach(Future&& future,
-            std::string&& outer_dbg_msg,
-            std::string&& inner_dbg_msg)
+        void attach(Future&& future, std::array<char, 8>&& outer_dbg_msg,
+            std::array<char, 8>&& inner_dbg_msg)
         {
             using outer_shared_state_ptr =
                 traits::detail::shared_state_ptr_for_t<Future>;
@@ -488,8 +493,7 @@ namespace hpx::lcos::detail {
             ptr->set_debug_data(HPX_MOVE(outer_dbg_msg));
             ptr->execute_deferred();
             ptr->set_on_completed(
-                [this_ = HPX_MOVE(this_),
-                    outer = HPX_MOVE(outer_state),
+                [this_ = HPX_MOVE(this_), outer = HPX_MOVE(outer_state),
                     inner_dbg_msg = HPX_MOVE(inner_dbg_msg)]() mutable -> void {
                     this_->template on_outer_ready<Future>(
                         HPX_MOVE(outer), HPX_MOVE(inner_dbg_msg));
@@ -514,8 +518,8 @@ namespace hpx::lcos::detail {
         }
 
         unwrap_continuation_allocator(
-            init_no_addref no_addref, other_allocator const& alloc)
-          : base_type(no_addref)
+            init_no_addref no_addref, std::array<char, 8> dbg_msg, other_allocator const& alloc)
+          : base_type(no_addref, dbg_msg)
           , alloc_(alloc)
         {
         }
@@ -547,8 +551,9 @@ namespace hpx::lcos::detail {
     template <typename Allocator, typename Future>
     inline traits::detail::shared_state_ptr_t<future_unwrap_result_t<Future>>
     unwrap_impl_alloc(Allocator const& a, Future&& future, error_code& /*ec*/,
-        std::string&& outer_dbg_msg,
-        std::string&& inner_dbg_msg)
+        std::array<char, 8>&& dbg_msg,
+        std::array<char, 8>&& outer_dbg_msg,
+        std::array<char, 8>&& inner_dbg_msg)
     {
         using base_allocator = Allocator;
         using result_type = future_unwrap_result_t<Future>;
@@ -569,7 +574,7 @@ namespace hpx::lcos::detail {
         unique_ptr p(traits::allocate(alloc, 1),
             util::allocator_deleter<other_allocator>{alloc});
 
-        traits::construct(alloc, p.get(), init_no_addref{}, alloc);
+        traits::construct(alloc, p.get(), init_no_addref{}, dbg_msg, alloc);
 
         // create a continuation
         hpx::traits::detail::shared_state_ptr_t<result_type> result(
@@ -593,19 +598,18 @@ namespace hpx::lcos::detail {
     {
         using allocator_type = hpx::util::thread_local_caching_allocator<char,
             hpx::util::internal_allocator<>>;
-        return unwrap_impl_alloc(allocator_type{}, HPX_FORWARD(Future, future),
-            ec, std::string(), std::string());
+        return unwrap_impl_alloc(
+            allocator_type{}, HPX_FORWARD(Future, future), ec, {"u"}, {"o"}, {"i"});
     }
 
     template <typename Future>
     inline traits::detail::shared_state_ptr_t<future_unwrap_result_t<Future>>
-    unwrap(Future&& future, error_code& ec,
-        std::string outer_dbg_msg,
-        std::string inner_dbg_msg)
+    unwrap(Future&& future, std::array<char, 8> dbg_msg, std::array<char, 8> outer_dbg_msg,
+        std::array<char, 8> inner_dbg_msg, error_code& ec = throws)
     {
         using allocator_type = hpx::util::thread_local_caching_allocator<char,
             hpx::util::internal_allocator<>>;
         return unwrap_impl_alloc(allocator_type{}, HPX_FORWARD(Future, future),
-            ec, HPX_MOVE(outer_dbg_msg), HPX_MOVE(inner_dbg_msg));
+            ec, HPX_MOVE(dbg_msg), HPX_MOVE(outer_dbg_msg), HPX_MOVE(inner_dbg_msg));
     }
 }    // namespace hpx::lcos::detail

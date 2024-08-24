@@ -257,8 +257,11 @@ struct partition : hpx::components::client_base<partition, partition_server>
     {
     }
 
-    partition(hpx::future<partition>&& c, std::string&& debug_str)
-      : base_type(std::move(c), std::move(debug_str))
+    partition(hpx::future<partition>&& c, std::array<char, 8>&& debug_str_unwr,
+        std::array<char, 8>&& debug_str_outer,
+        std::array<char, 8>&& debug_str_inner)
+      : base_type(std::move(c), std::move(debug_str_unwr),
+            std::move(debug_str_outer), std::move(debug_str_inner))
     {
     }
 
@@ -289,7 +292,7 @@ struct stepper
     // The partitioned operator, it invokes the heat operator above on all elements
     // of a partition.
     static partition heat_part(
-        partition const& left, partition const& middle, partition const& right)
+        partition const& left, partition const& middle, partition const& right, std::size_t t, std::size_t i)
     {
         using hpx::dataflow;
         using hpx::unwrapping;
@@ -309,6 +312,10 @@ struct stepper
                     next[i] = heat(m[i - 1], m[i], m[i + 1]);
                 return next;
             }));
+
+        std::array<char, 8> dbg      {'1', ' ', '|', 't', char(t), 'i', char(i), ' '};
+        std::array<char, 8> dbg_outer{'1', 'o', '|', 't', char(t), 'i', char(i), ' '};
+        std::array<char, 8> dbg_inner{'1', 'i', '|', 't', char(t), 'i', char(i), ' '};
 
         return partition(
             dataflow(hpx::launch::async,
@@ -331,7 +338,7 @@ struct stepper
                 }),
                 next_middle, left.get_data(partition_server::left_partition),
                 middle_data, right.get_data(partition_server::right_partition)),
-            std::string("1"));
+                std::move(dbg), std::move(dbg_outer), std::move(dbg_inner));
     }
     //]
 
@@ -382,15 +389,18 @@ stepper::space stepper::do_work(std::size_t np, std::size_t nx, std::size_t nt)
             auto Op = hpx::bind_front(act, localities[locidx(i, np, nl)]);
             // next[i] = dataflow(hpx::launch::async, Op, current[idx(i, -1, np)],
             //     current[i], current[idx(i, +1, np)]);
+            std::array<char, 8> dbg      {'2', ' ', '|', 't', char(t), 'i', char(i), ' '};
+            std::array<char, 8> dbg_outer{'2', 'o', '|', 't', char(t), 'i', char(i), ' '};
+            std::array<char, 8> dbg_inner{'2', 'i', '|', 't', char(t), 'i', char(i), ' '};
             next[i] = partition(
                 hpx::async(
-                    [Op, current](partition const& left,
+                    [Op, current, t, i](partition const& left,
                         partition const& middle, partition const& right) {
-                        return Op(left, middle, right);
+                        return Op(left, middle, right, t, i);
                     },
                     current[idx(i, -1, np)], current[i],
                     current[idx(i, +1, np)]),
-                std::string("2"));
+                std::move(dbg), std::move(dbg_outer), std::move(dbg_inner));
         }
 
         if ((t % nd) == 0)

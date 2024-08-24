@@ -234,15 +234,24 @@ namespace hpx::lcos::detail {
 
         struct debug_data_t
         {
-            std::string dbg_str_;
+            std::array<char, 8> dbg_str_;
+            std::array<char, 8> prev_dbg_str;
 
             debug_data_t()
-              : dbg_str_(std::string())
+              : dbg_str_({})
+              , prev_dbg_str({})
             {
             }
 
-            debug_data_t(std::string&& dbg_str)
-              : dbg_str_(dbg_str)
+            debug_data_t(std::array<char, 8> dbg_str)
+              : dbg_str_(dbg_str),
+                prev_dbg_str({})
+            {
+            }
+
+            debug_data_t(debug_data_t debug_data, debug_data_t prev_debug_data)
+              : dbg_str_(debug_data.dbg_str_),
+                prev_dbg_str(prev_debug_data.dbg_str_)
             {
             }
 
@@ -326,7 +335,7 @@ namespace hpx::lcos::detail {
 
         virtual void set_exception(std::exception_ptr data) = 0;
 
-       debug_data_t get_debug_data() const
+       const debug_data_t& get_debug_data() const
         {
             return p_debug_data;
         }
@@ -498,10 +507,6 @@ namespace hpx::lcos::detail {
             //       empty. Also, there can be only one thread (this thread)
             //       attempting to set the value by definition.
 
-            // set the data
-            auto* value_ptr = reinterpret_cast<result_type*>(&storage_);
-            construct(value_ptr, HPX_FORWARD(Ts, ts)...);
-
             // At this point the lock needs to be acquired to safely access the
             // registered continuations
             std::unique_lock<mutex_type> l(mtx_);
@@ -524,6 +529,10 @@ namespace hpx::lcos::detail {
                     "future_data_base::set_value",
                     "data has already been set for this future");
             }
+
+            // set the data
+            auto* value_ptr = reinterpret_cast<result_type*>(&storage_);
+            construct(value_ptr, HPX_FORWARD(Ts, ts)...);
 
             // reset runs_child_ thread id to avoid keeping the thread
             // alive as long as the future
@@ -569,22 +578,95 @@ namespace hpx::lcos::detail {
 #endif
         }
 
-        template <typename P, typename... Ts>
-        void set_value_fancy(P* who_set_me, unsigned int debug_data, Ts&&... ts)
-        {
-            set_value(HPX_FORWARD(Ts, ts)...);
-        }
-
         template <typename... Ts>
         void set_value_fancy(
             future_data_base<traits::detail::future_data_void>* who_set_me,
             debug_data_t debug_data,
             Ts&&... ts)
         {
+
+
+            hpx::intrusive_ptr<future_data_base> this_(this);    // keep alive
+
+            // Note: it is safe to access the data store as no other thread
+            //       should access it concurrently. There shouldn't be any
+            //       threads attempting to read the value as the state is still
+            //       empty. Also, there can be only one thread (this thread)
+            //       attempting to set the value by definition.
+
+            // At this point the lock needs to be acquired to safely access the
+            // registered continuations
+            std::unique_lock<mutex_type> l(mtx_);
+            [[maybe_unused]] util::ignore_while_checking il(&l);
+
+            // handle all threads waiting for the future to become ready
+            auto on_completed = HPX_MOVE(on_completed_);
+            on_completed_.clear();
+
+            // The value has been set, changing the state to 'value' at this
+            // point signals to all other threads that this future is ready.
+            state expected = empty;
+            if (!state_.compare_exchange_strong(
+                    expected, value, std::memory_order_release))
+            {
+                // this future should be 'empty' still (it can't be made ready
+                // more than once).
+                l.unlock();
+                HPX_THROW_EXCEPTION(hpx::error::promise_already_satisfied,
+                    "future_data_base::set_value",
+                    "data has already been set for this future");
+            }
+
+            // set the data
+            auto* value_ptr = reinterpret_cast<result_type*>(&storage_);
+            construct(value_ptr, HPX_FORWARD(Ts, ts)...);
+
             this->p_who_set_me = who_set_me;
             this->p_debug_data =
                 future_data_base::debug_data_t(debug_data, who_set_me->get_debug_data());
-            set_value(HPX_FORWARD(Ts, ts)...);
+
+            // reset runs_child_ thread id to avoid keeping the thread
+            // alive as long as the future
+            this->base_type::runs_child_.reset();
+
+            // 26111: Caller failing to release lock 'this->mtx_'
+            // 26115: Failing to release lock 'this->mtx_'
+            // 26800: Use of a moved from object 'l'
+#if defined(HPX_MSVC)
+#pragma warning(push)
+#pragma warning(disable : 26111 26115 26800)
+#endif
+
+            // Note: we use notify_one repeatedly instead of notify_all as we
+            //       know:
+            //
+            //       a. that most of the time we have at most one thread
+            //          waiting on the future (most futures are not shared), and
+            //       b. our implementation of condition_variable::notify_one
+            //          relinquishes the lock before resuming the waiting thread
+            //          that avoids suspension of this thread when it tries to
+            //          re-lock the mutex while exiting from
+            //          condition_variable::wait
+            while (
+                cond_.notify_one(HPX_MOVE(l), threads::thread_priority::boost))
+            {
+                l = std::unique_lock<mutex_type>(mtx_);
+            }
+
+            // Note: cv.notify_one() above 'consumes' the lock 'l' and leaves
+            //       it unlocked when returning.
+            HPX_ASSERT_DOESNT_OWN_LOCK(l);
+            il.reset_owns_registration();
+
+            // invoke the callback (continuation) function
+            if (!on_completed.empty())
+            {
+                handle_on_completed(HPX_MOVE(on_completed));
+            }
+
+#if defined(HPX_MSVC)
+#pragma warning(pop)
+#endif
         }
 
         void set_exception(std::exception_ptr data) override
@@ -731,12 +813,14 @@ namespace hpx::lcos::detail {
             }
             case empty:
                 [[fallthrough]];
+            case deleted:
+                [[fallthrough]];
             case ready:
                 break;
             }
 
             on_completed_.clear();
-            p_debug_data = debug_data_t();
+            p_debug_data = debug_data_t(std::array<char, 8>{"9999999"});
             p_who_set_me = nullptr;
         }
 
@@ -769,6 +853,11 @@ namespace hpx::lcos::detail {
 
         explicit future_data(init_no_addref no_addref) noexcept
           : future_data_base<Result>(no_addref)
+        {
+        }
+
+        explicit future_data(init_no_addref no_addref, future_data_base<Result>::debug_data_t dbd) noexcept
+          : future_data_base<Result>(no_addref, dbd)
         {
         }
 

@@ -106,8 +106,6 @@ namespace hpx::traits {
             HPX_FORCEINLINE static void transfer_result(
                 Derived&& src, Destination& dest)
             {
-                dest.set_value_fancy(& src, 0, src.get());
-
                 using extra_client_data = typename Derived::extra_data_type;
                 using shared_state_type = typename Derived::shared_state_type;
 
@@ -115,6 +113,18 @@ namespace hpx::traits {
                     dynamic_cast<shared_state_type*>(src.shared_state_.get()));
                 auto* src_ptr =
                     static_cast<shared_state_type*>(src.shared_state_.get());
+
+                using future_data_base_type = hpx::lcos::detail::future_data_base<traits::detail::future_data_void>;
+                if constexpr (std::is_convertible_v<shared_state_type*, future_data_base_type*>)
+                {
+                    dest.set_value_fancy(
+                        static_cast<future_data_base_type*> (src_ptr),
+                        dest.get_debug_data(), src.get());
+                }
+                else
+                {
+                    dest.set_value(src.get());
+                }
 
                 if constexpr (!std::is_void_v<extra_client_data>)
                 {
@@ -206,7 +216,6 @@ struct HPX_EXPORT hpx::lcos::detail::future_data<hpx::id_type>
     future_data(future_data&&) = delete;
     future_data& operator=(future_data const&) = delete;
     future_data& operator=(future_data&&) = delete;
-
 
     explicit future_data(
         init_no_addref no_addref, debug_data_t dbd = debug_data_t())
@@ -359,18 +368,29 @@ namespace hpx::components {
         {
         }
 
+        base_shared_state_type* get_shared_state()
+        {
+            return shared_state_.get();
+        }
+
         client_base(client_base const& rhs) = default;
         client_base(client_base&& rhs) noexcept = default;
 
         // A future to a client_base can unwrap to represent the client_base
         // directly as a client_base is semantically a future to the id of the
         // referenced object.
-        client_base(hpx::future<Derived>&& d,
-            base_shared_state_type::debug_data_t dbd = {})
+        client_base(hpx::future<Derived>&& d)
           : shared_state_(
                 d.valid() ? lcos::detail::unwrap(HPX_MOVE(d)) : nullptr)
         {
-            shared_state_->set_debug_data(dbd);
+        }
+
+        client_base(hpx::future<Derived>&& d, std::array<char, 8> dbg,
+            std::array<char, 8> dbg_outer, std::array<char, 8> dbg_inner)
+          : shared_state_(d.valid() ?
+                    lcos::detail::unwrap(HPX_MOVE(d), dbg, dbg_outer, dbg_inner) :
+                    nullptr)
+        {
         }
 
         ~client_base() = default;
