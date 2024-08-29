@@ -436,7 +436,7 @@ namespace hpx::lcos::detail {
                             "unwrap_continuation<ContResult>::on_outer_ready",
                             "the inner future has no valid shared state");
                     }
-                    ptr->set_debug_data(HPX_MOVE(inner_dbg_msg));
+                    ptr->set_debug_data(inner_dbg_msg);
                     ptr->execute_deferred();
 
                     // attach continuation on inner ready
@@ -490,13 +490,14 @@ namespace hpx::lcos::detail {
                     "the future has no valid shared state");
             }
 
-            ptr->set_debug_data(HPX_MOVE(outer_dbg_msg));
+            ptr->set_debug_data(outer_dbg_msg);
             ptr->execute_deferred();
             ptr->set_on_completed(
                 [this_ = HPX_MOVE(this_), outer = HPX_MOVE(outer_state),
                     inner_dbg_msg = HPX_MOVE(inner_dbg_msg)]() mutable -> void {
                     this_->template on_outer_ready<Future>(
                         HPX_MOVE(outer), HPX_MOVE(inner_dbg_msg));
+
                 });
         }
     };

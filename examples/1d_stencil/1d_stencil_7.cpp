@@ -319,12 +319,17 @@ struct stepper
 
         return partition(
             dataflow(hpx::launch::async,
-                unwrapping([left, middle, right, next_middle, middle_data](
-                               partition_data next, partition_data const& l,
-                               partition_data const& m,
-                               partition_data const& r) -> partition {
+                [left, middle, right, next_middle, middle_data](
+                               hpx::shared_future<partition_data> fut_next, hpx::shared_future<partition_data> const& fut_l,
+                               hpx::shared_future<partition_data> const& fut_m,
+                               hpx::shared_future<partition_data> const& fut_r) -> partition {
                     HPX_UNUSED(left);
                     HPX_UNUSED(right);
+
+                    partition_data next = fut_next.get();
+                    partition_data l = fut_l.get();
+                    partition_data m = fut_m.get();
+                    partition_data r = fut_r.get();
 
                     // Calculate the missing boundary elements once the
                     // corresponding data has become available.
@@ -335,7 +340,7 @@ struct stepper
                     // The new partition_data will be allocated on the same locality
                     // as 'middle'.
                     return partition(middle.get_id(), std::move(next));
-                }),
+                },
                 next_middle, left.get_data(partition_server::left_partition),
                 middle_data, right.get_data(partition_server::right_partition)),
                 std::move(dbg), std::move(dbg_outer), std::move(dbg_inner));
