@@ -155,7 +155,7 @@ Past and current funding and support for HPX is listed `here
      :target: https://app.codacy.com/gh/STEllAR-GROUP/hpx/dashboard
      :alt: HPX Code Quality Assessment
 
-.. |codacy_coverage| image:: https://app.codacy.com/project/badge/Coverage/0b8cd5a874914edaba67ce3bb711e688    
+.. |codacy_coverage| image:: https://app.codacy.com/project/badge/Coverage/0b8cd5a874914edaba67ce3bb711e688
      :target: https://app.codacy.com/gh/STEllAR-GROUP/hpx/coverage/dashboard
      :alt: HPX coverage report
 
@@ -171,6 +171,6 @@ Past and current funding and support for HPX is listed `here
     :target: https://bestpractices.coreinfrastructure.org/projects/6093
     :alt: OpenSSF Best Practices
 
-.. |hpx_logo| image:: http://hpx.stellar-group.org/files/hpx_logo_white.png
+.. |hpx_logo| image:: https://i.postimg.cc/rcKWRQHt/hpx.png
     :target: http://hpx.stellar-group.org/
     :alt: HPX Logo
