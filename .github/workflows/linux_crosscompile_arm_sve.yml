@@ -9,9 +9,17 @@ name: Linux CROSSCOMPILE ARM SVE CI (Release)
 on: [pull_request]
 
 jobs:
-  build:
+  build-matrix:
     runs-on: ubuntu-latest
     container: stellargroup/crosscompile_arm_sve_build_env:1
+    strategy:
+      matrix:
+        datapar-backend: [EVE, SVE]
+        include:
+            - datapar-backend: EVE
+              additional-options: "-DHPX_WITH_FETCH_EVE=ON"
+            - datapar-backend: SVE
+              additional-options: "-DSVE_ROOT=/opt/install/sve/release/sve"
 
     steps:
     - uses: actions/checkout@v6
@@ -33,13 +41,13 @@ jobs:
               -DHPX_WITH_TESTS=ON \
               -DHPX_WITH_TESTS_MAX_THREADS_PER_LOCALITY=2 \
               -DHPX_WITH_CHECK_MODULE_DEPENDENCIES=On \
-              -DHPX_WITH_CXX_STANDARD=20 \
-              -DCMAKE_CXX_FLAGS=-march=armv8-a+sve \
+              -DHPX_WITH_CXX_STANDARD=23 \
+              -DCMAKE_CXX_FLAGS="-march=armv8-a+sve -msve-vector-bits=512" \
               -DBOOST_ROOT=/opt/install/boost/release/boost \
               -DHWLOC_ROOT=/opt/install/hwloc \
               -DHPX_WITH_GENERIC_CONTEXT_COROUTINES=On \
-              -DHPX_WITH_DATAPAR_BACKEND=SVE \
-              -DSVE_ROOT=/opt/install/sve/release/sve
+              -DHPX_WITH_DATAPAR_BACKEND=${{ matrix.datapar-backend }} \
+              ${{ matrix.additional-options }}
     - name: Build
       shell: bash
       run: |

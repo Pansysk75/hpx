@@ -5,14 +5,36 @@
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
-name: Linux CI (Debug)
+name: Linux CI
 
 on: [pull_request]
 
 jobs:
-  build:
+  build-matrix:
     runs-on: ubuntu-latest
     container: stellargroup/build_env:17
+    strategy:
+      matrix:
+        build-type: [Debug, Release]
+        with-fetch-deps: [OFF]
+        with-cxx-modules: [OFF]
+        with-static-linking: [OFF]
+        additional-options: [""]
+        include:
+            - build-type: Debug
+              additional-options: "-DHPX_WITH_VERIFY_LOCKS=ON -DHPX_WITH_VERIFY_LOCKS_BACKTRACE=ON -DHPX_WITH_CHECK_MODULE_DEPENDENCIES=On"
+            # Test matrix options selectively to save CI resources
+            - build-type: Release
+              with-fetch-deps: ON
+            - build-type: Release
+              with-cxx-modules: ON
+            - build-type: Release
+              with-static-linking: ON
+    name: |
+        ${{ matrix.build-type }} - \
+        ${{ matrix.with-fetch-deps == 'ON' && 'fetch-deps ' || '' }} \
+        ${{ matrix.with-cxx-modules == 'ON' && 'cxx-modules ' || '' }} \
+        ${{ matrix.with-static-linking == 'ON' && 'static-linking' || '' }}
 
     steps:
     - uses: actions/checkout@v6
@@ -23,16 +45,19 @@ jobs:
               . \
               -Bbuild \
               -GNinja \
-              -DCMAKE_BUILD_TYPE=Debug \
+              -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
               -DHPX_WITH_MALLOC=system \
               -DHPX_WITH_FETCH_ASIO=ON \
+              -DHPX_WITH_FETCH_BOOST=${{ matrix.with-fetch-deps }} \
+              -DHPX_WITH_FETCH_HWLOC=${{ matrix.with-fetch-deps }} \
               -DHPX_WITH_ASIO_TAG=asio-1-34-2 \
               -DHPX_WITH_EXAMPLES=ON \
               -DHPX_WITH_TESTS=ON \
               -DHPX_WITH_TESTS_MAX_THREADS_PER_LOCALITY=2 \
               -DHPX_WITH_VERIFY_LOCKS=ON \
               -DHPX_WITH_VERIFY_LOCKS_BACKTRACE=ON \
-              -DHPX_WITH_CHECK_MODULE_DEPENDENCIES=On
+              -DHPX_WITH_CHECK_MODULE_DEPENDENCIES=ON \
+              ${{ matrix.additional-options }}
     - name: Build
       shell: bash
       run: |

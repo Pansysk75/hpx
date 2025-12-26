@@ -1,18 +1,23 @@
-# Copyright (c) 2020 ETH Zurich
-# Copyright (c) 2023 The STE||AR Group
+# Copyright (c) 2024 Vedant Nimje
 #
 # SPDX-License-Identifier: BSL-1.0
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
-name: Linux CI (Release, Static)
+name: Linux CI (Debug) with Benchmark Test
 
 on: [pull_request]
 
+
 jobs:
-  build:
+  build-matrix:
     runs-on: ubuntu-latest
     container: stellargroup/build_env:17
+    strategy:
+        matrix:
+            with-nanobench: [ON, OFF]
+
+    name: ${{ matrix.with-nanobench == 'ON' && 'with-nanobench' || '' }}
 
     steps:
     - uses: actions/checkout@v6
@@ -23,26 +28,25 @@ jobs:
               . \
               -Bbuild \
               -GNinja \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DHPX_WITH_STATIC_LINKING=ON \
+              -DCMAKE_BUILD_TYPE=Debug \
               -DHPX_WITH_MALLOC=system \
               -DHPX_WITH_FETCH_ASIO=ON \
               -DHPX_WITH_EXAMPLES=ON \
               -DHPX_WITH_TESTS=ON \
+              -DHPX_WITH_NANOBENCH=${{ matrix.with-nanobench }} \
               -DHPX_WITH_TESTS_MAX_THREADS_PER_LOCALITY=2 \
               -DHPX_WITH_CHECK_MODULE_DEPENDENCIES=On
     - name: Build
       shell: bash
       run: |
-          cmake --build build --target all
-          cmake --build build --target examples
+          cmake --build build/ --target tests.performance.modules.segmented_algorithms.minmax_element_performance
     - name: Test
       shell: bash
       run: |
           cd build
-          ctest \
-            --output-on-failure \
-            --tests-regex tests.examples \
-            --exclude-regex tests.examples.transpose.transpose_block_numa \
-            --exclude-regex tests.examples.quickstart.hello_world_1 \
-            --exclude-regex tests.examples.quickstart.distributed.tcp.custom_serialization
+          ./bin/minmax_element_performance_test
+    - name: Test with detailed output
+      shell: bash
+      run: |
+          cd build
+          ./bin/minmax_element_performance_test --detailed_bench
