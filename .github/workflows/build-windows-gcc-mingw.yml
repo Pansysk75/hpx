@@ -1,12 +1,33 @@
-# Copyright (c) 2023-2024 The STE||AR-Group
+# Copyright (c) 2026 The STE||AR Group
 #
 # SPDX-License-Identifier: BSL-1.0
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Reusable workflow for configuring and building HPX on Windows with GCC/MinGW.
 
-name: Windows CI (gcc/mingw toolset)
-
-on: [pull_request]
+on:
+    workflow_call:
+        inputs:
+            build-type:
+                required: true
+                type: string
+            cmake-additional-options:
+                required: false
+                type: string
+                default: ""
+            build-targets:
+                required: false
+                type: string
+                default: "all"
+            test-regex:
+                required: false
+                type: string
+                default: ".*"
+            exclude-test-regex:
+                required: false
+                type: string
+                default: ""
 
 jobs:
   build:
@@ -40,7 +61,7 @@ jobs:
       shell: bash
       run: |
           cmake . -Bbuild -G'Ninja' \
-              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_BUILD_TYPE=${{ inputs.build-type }} \
               -DCMAKE_CXX_COMPILER=g++ \
               -DBOOST_ROOT="C:\Boost" \
               -DHWLOC_ROOT="C:\projects\hwloc-win64-build-2.8.0" \
@@ -55,8 +76,22 @@ jobs:
               -DHPX_WITH_TESTS_UNIT=ON \
               -DHPX_WITH_TESTS_EXAMPLES=ON \
               -DHPX_WITH_DEPRECATION_WARNINGS=OFF \
-              -DHPX_WITH_MODULES_AS_STATIC_LIBRARIES=OFF
+              -DHPX_WITH_MODULES_AS_STATIC_LIBRARIES=OFF \
+              ${{ inputs.cmake-additional-options }}
     - name: Build
       shell: bash
       run: |
-          cmake --build build --config Release -- -j 2
+          cmake --build build --config ${{ inputs.build-type }} --target ${{ inputs.build-targets }} -- -j 2
+    - name: Test
+      shell: bash
+      run: |
+          EXCLUDE_REGEX=$(grep -v  -e ^# -e ^$ .github/workflows/excluded-tests-windows.txt | paste -sd'|')
+          if [ -n "${{ inputs.exclude-test-regex }}" ]; then
+            EXCLUDE_REGEX="${EXCLUDE_REGEX}|${{ inputs.exclude-test-regex }}"
+          fi
+          ctest \
+            --test-dir build \
+            --build-config ${{ inputs.build-type }} \
+            --output-on-failure \
+            --tests-regex "${{ inputs.test-regex }}" \
+            --exclude-regex "${EXCLUDE_REGEX}"

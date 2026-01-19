@@ -8,6 +8,11 @@ name: Linux CI (Release, FetchContent)
 
 on: [pull_request]
 
+# Cancel previous in-progress runs on the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest

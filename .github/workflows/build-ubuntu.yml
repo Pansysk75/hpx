@@ -1,0 +1,73 @@
+# Copyright (c) 2026 The STE||AR Group
+#
+# SPDX-License-Identifier: BSL-1.0
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Reusable workflow for configuring and building HPX on Linux.
+
+on:
+  workflow_call:
+    inputs:
+      build-type:
+          required: true
+          type: string
+      cmake-additional-options:
+          required: false
+          type: string
+          default: ""
+      build-targets:
+          required: false
+          type: string
+          default: "all"
+      skip-tests:
+          required: false
+          type: boolean
+          default: false
+      test-regex:
+          required: false
+          type: string
+          default: "tests.examples"
+      exclude-test-regex:
+          required: false
+          type: string
+          default: "tests.examples.transpose.transpose_block_numa|tests.examples.quickstart.1d_wave_equation"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: "stellargroup/build_env:18"
+
+    steps:
+    - uses: actions/checkout@v6
+    - name: Configure
+      shell: bash
+      run: |
+          cmake \
+              . \
+              -Bbuild \
+              -GNinja \
+              -DCMAKE_BUILD_TYPE=${{ inputs.build-type }} \
+              -DHPX_WITH_MALLOC=system \
+              -DHPX_WITH_FETCH_ASIO=ON \
+              -DHPX_WITH_ASIO_TAG=asio-1-34-2 \
+              -DHPX_WITH_EXAMPLES=ON \
+              -DHPX_WITH_TESTS=ON \
+              -DHPX_WITH_TESTS_MAX_THREADS_PER_LOCALITY=2 \
+              ${{ inputs.build-type == 'Debug' && '-DHPX_WITH_VERIFY_LOCKS=ON -DHPX_WITH_VERIFY_LOCKS_BACKTRACE=ON -DHPX_WITH_CHECK_MODULE_DEPENDENCIES=ON' || '' }} \
+              ${{ inputs.cmake-additional-options }}
+
+    - name: Build
+      shell: bash
+      run: |
+          cmake --build build --target ${{ inputs.build-targets }}
+
+    - name: Test
+      if: ${{ !inputs.skip-tests }}
+      shell: bash
+      run: |
+          ctest \
+            --test-dir build \
+            --output-on-failure \
+            --tests-regex "${{ inputs.test-regex }}" \
+            --exclude-regex "${{ inputs.exclude-test-regex }}"

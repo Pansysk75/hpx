@@ -1,0 +1,112 @@
+# Copyright (c) 2020-2026 The STE||AR Group
+#
+# SPDX-License-Identifier: BSL-1.0
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
+name: CI Matrix
+
+on:
+  pull_request
+
+# Cancel previous in-progress runs on the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Linux builds
+  linux-debug:
+    uses: ./.github/workflows/build-ubuntu.yml
+    with:
+      build-type: Debug
+
+  linux-release:
+    uses: ./.github/workflows/build-ubuntu.yml
+    with:
+      build-type: Release
+
+  linux-fetch-deps:
+    uses: ./.github/workflows/build-ubuntu.yml
+    with:
+      build-type: Release
+      cmake-additional-options: "-DHPX_WITH_FETCH_BOOST=ON -DHPX_WITH_FETCH_HWLOC=ON"
+
+  linux-cxx-modules:
+    uses: ./.github/workflows/build-ubuntu.yml
+    with:
+      build-type: Release
+      cmake-additional-options: "-DHPX_WITH_CXX_MODULES=ON"
+
+  linux-static-linking:
+    uses: ./.github/workflows/build-ubuntu.yml
+    with:
+      build-type: Release
+      cmake-additional-options: "-DHPX_WITH_STATIC_LINKING=ON"
+
+  # macOS builds
+  macos-debug:
+    uses: ./.github/workflows/build-macos.yml
+
+  macos-fetch-deps:
+    uses: ./.github/workflows/build-macos.yml
+    with:
+      cmake-additional-options: "-DHPX_WITH_FETCH_BOOST=ON -DHPX_WITH_FETCH_HWLOC=ON"
+
+  # Windows VS2022 builds
+  windows-vs2022-debug:
+    uses: ./.github/workflows/build-windows-vs2022.yml
+    with:
+      build-type: Debug
+
+  windows-vs2022-release:
+    uses: ./.github/workflows/build-windows-vs2022.yml
+    with:
+      build-type: Release
+
+  windows-vs2022-fetch-deps:
+    uses: ./.github/workflows/build-windows-vs2022.yml
+    with:
+      build-type: Debug
+      cmake-additional-options: "-DHPX_WITH_FETCH_BOOST=ON -DHPX_WITH_FETCH_HWLOC=ON"
+
+  windows-vs2022-debug-cxx-modules:
+    uses: ./.github/workflows/build-windows-vs2022.yml
+    with:
+      build-type: Debug
+      cmake-additional-options: "-DHPX_WITH_CXX_MODULES=ON"
+
+  windows-vs2022-release-cxx-modules:
+    uses: ./.github/workflows/build-windows-vs2022.yml
+    with:
+      build-type: Release
+      cmake-additional-options: "-DHPX_WITH_CXX_MODULES=ON"
+
+  windows-vs2022-debug-static-linking:
+    uses: ./.github/workflows/build-windows-vs2022.yml
+    with:
+      build-type: Debug
+      cmake-additional-options: "-DHPX_WITH_STATIC_LINKING=ON"
+
+  windows-vs2022-release-static-linking:
+    uses: ./.github/workflows/build-windows-vs2022.yml
+    with:
+      build-type: Release
+      cmake-additional-options: "-DHPX_WITH_STATIC_LINKING=ON"
+
+  # Windows ClangCL builds
+  windows-clang-debug:
+    uses: ./.github/workflows/build-windows-clang.yml
+    with:
+      build-type: Debug
+
+  windows-clang-release:
+    uses: ./.github/workflows/build-windows-clang.yml
+    with:
+      build-type: Release
+
+  # Windows GCC/MinGW builds
+  windows-gcc-mingw-release:
+    uses: ./.github/workflows/build-windows-gcc-mingw.yml
+    with:
+      build-type: Release

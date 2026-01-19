@@ -1,0 +1,75 @@
+# Copyright (c) 2026 The STE||AR Group
+#
+# SPDX-License-Identifier: BSL-1.0
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Reusable workflow for configuring and building HPX on macOS.
+
+on:
+    workflow_call:
+        inputs:
+            build-type:
+                required: false
+                type: string
+                default: "Debug"
+            cmake-additional-options:
+                required: false
+                type: string
+                default: ""
+            build-targets:
+                required: false
+                type: string
+                default: "all tests"
+            test-regex:
+                required: false
+                type: string
+                default: ".*"
+            exclude-test-regex:
+                required: false
+                type: string
+                default: ""
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install dependencies
+      run: |
+          brew install --overwrite python-tk && \
+          brew install --overwrite boost hwloc gperftools ninja && \
+          brew upgrade cmake
+    - name: Configure
+      shell: bash
+      run: |
+          cmake \
+              . \
+              -Bbuild \
+              -GNinja \
+              -DCMAKE_BUILD_TYPE=${{ inputs.build-type }} \
+              -DHPX_WITH_MALLOC=system \
+              -DHPX_WITH_FETCH_ASIO=ON \
+              -DHPX_WITH_ASIO_TAG=asio-1-34-2 \
+              -DHPX_WITH_EXAMPLES=ON \
+              -DHPX_WITH_TESTS=ON \
+              -DHPX_WITH_TESTS_MAX_THREADS_PER_LOCALITY=2 \
+                ${{ inputs.cmake-additional-options }}
+
+    - name: Build
+      shell: bash
+      run: |
+          cmake --build build --target ${{ inputs.build-targets }}
+
+    - name: Test
+      shell: bash
+      run: |
+          EXCLUDE_REGEX=$(grep -v  -e ^# -e ^$ .github/workflows/excluded-tests-macos.txt | paste -sd'|')
+          if [ -n "${{ inputs.exclude-test-regex }}" ]; then
+            EXCLUDE_REGEX="${EXCLUDE_REGEX}|${{ inputs.exclude-test-regex }}"
+          fi
+          ctest --output-on-failure \
+            --test-dir build \
+            --tests-regex "${{ inputs.test-regex }}" \
+            --exclude-regex "${EXCLUDE_REGEX}"
