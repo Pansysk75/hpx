@@ -14,13 +14,13 @@
 #pragma warning(disable : 4100)
 #endif
 
-#include <hpx/hpx_init.hpp>
-
 // We support different implementation depending upon the Operating
 // System in use.
 #if defined(HPX_HAVE_DYNAMIC_HPX_MAIN) &&                                      \
     (defined(__linux) || defined(__linux__) || defined(linux) ||               \
         defined(__APPLE__))
+
+#include <hpx/init_runtime_local/macros.hpp>
 
 #include <string>
 
@@ -43,6 +43,8 @@ namespace hpx_start {
 }    // namespace hpx_start
 
 #else
+
+#include <hpx/hpx_init.hpp>
 
 #if defined(HPX_HAVE_STATIC_LINKING)
 #include <hpx/hpx_main_impl.hpp>
