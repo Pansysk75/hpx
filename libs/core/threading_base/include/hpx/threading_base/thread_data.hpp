@@ -14,7 +14,6 @@
 #include <hpx/modules/coroutines.hpp>
 #include <hpx/modules/debugging.hpp>
 #include <hpx/modules/errors.hpp>
-#include <hpx/modules/execution_base.hpp>
 #include <hpx/modules/functional.hpp>
 #include <hpx/modules/logging.hpp>
 #include <hpx/modules/tracing.hpp>
@@ -43,6 +42,10 @@
 #include <hpx/config/warnings_prefix.hpp>
 
 ////////////////////////////////////////////////////////////////////////////////
+namespace hpx::execution_base::this_thread::detail {
+    HPX_CXX_CORE_EXPORT struct agent_storage;
+}
+
 namespace hpx::threads {
 
     namespace detail {

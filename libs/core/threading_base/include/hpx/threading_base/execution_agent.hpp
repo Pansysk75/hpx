@@ -8,8 +8,10 @@
 #pragma once
 
 #include <hpx/config.hpp>
+#include <hpx/execution_base/agent_base.hpp>
+#include <hpx/execution_base/context_base.hpp>
+#include <hpx/execution_base/resource_base.hpp>
 #include <hpx/modules/coroutines.hpp>
-#include <hpx/modules/execution_base.hpp>
 #include <hpx/modules/timing.hpp>
 
 #include <cstddef>

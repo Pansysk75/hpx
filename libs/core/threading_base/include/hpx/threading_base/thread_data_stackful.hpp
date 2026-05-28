@@ -14,6 +14,7 @@
 #include <hpx/modules/coroutines.hpp>
 #include <hpx/modules/errors.hpp>
 #include <hpx/modules/type_support.hpp>
+#include <hpx/execution_base/this_thread.hpp>
 #include <hpx/threading_base/execution_agent.hpp>
 #include <hpx/threading_base/thread_data.hpp>
 #include <hpx/threading_base/thread_init_data.hpp>
