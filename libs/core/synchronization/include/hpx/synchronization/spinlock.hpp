@@ -19,7 +19,7 @@
 
 #include <hpx/config.hpp>
 
-#include <hpx/modules/execution_base.hpp>
+#include <hpx/execution_base/yield_while.hpp>
 #include <hpx/modules/itt_notify.hpp>
 #include <hpx/modules/lock_registration.hpp>
 #include <hpx/modules/tracing.hpp>

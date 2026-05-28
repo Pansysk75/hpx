@@ -23,6 +23,8 @@ set(execution_base_headers
     hpx/execution_base/sender.hpp
     hpx/execution_base/stdexec_forward.hpp
     hpx/execution_base/this_thread.hpp
+    hpx/execution_base/this_thread_experimental.hpp
+    hpx/execution_base/yield_while.hpp
     hpx/execution_base/traits/is_executor.hpp
     hpx/execution_base/traits/is_executor_parameters.hpp
     hpx/execution_base/traits/coroutine_traits.hpp
@@ -32,7 +34,7 @@ set(execution_base_headers
 set(execution_base_compat_headers
     hpx/basic_execution.hpp => hpx/modules/execution_base.hpp
     hpx/parallel/executors/execution_fwd.hpp => hpx/modules/execution_base.hpp
-    hpx/util/yield_while.hpp => hpx/modules/execution_base.hpp
+    hpx/util/yield_while.hpp => hpx/execution_base/yield_while.hpp
     hpx/basic_execution/agent_base.hpp => hpx/modules/execution_base.hpp
     hpx/basic_execution/agent_ref.hpp => hpx/modules/execution_base.hpp
     hpx/basic_execution/context_base.hpp => hpx/modules/execution_base.hpp
