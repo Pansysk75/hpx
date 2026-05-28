@@ -1546,5 +1546,3 @@ namespace hpx::serialization {
         hpx::lcos::detail::serialize_future(ar, f, version);
     }
 }    // namespace hpx::serialization
-
-#include <hpx/modules/futures.hpp>
